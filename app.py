@@ -7,7 +7,8 @@ st.title("🚗 تطبيق تحديث الشيت الذكي")
 
 # دالة ذكية لترتيب وتنظيف اللوحات (حروف ثم أرقام وبدون مسافات)
 def normalize_plate(plate_str):
-    if not plate_str: return ""
+    if not plate_str: 
+        return ""
     # تحويل لنص ومسح المسافات
     plate_str = str(plate_str).replace(" ", "").strip()
     # استخراج الحروف العربية فقط
@@ -46,7 +47,7 @@ if uploaded_main and uploaded_port:
                     plate = sheet_port.cell(row=row, column=1).value
                     if plate:
                         norm_plate = normalize_plate(plate)
-                        if norm_plate: # للتأكد أن الخلية ليست فارغة بعد التنظيف
+                        if norm_plate:
                             car_type = sheet_port.cell(row=row, column=4).value
                             port_data.append({
                                 'original_plate': plate, 
@@ -83,4 +84,48 @@ if uploaded_main and uploaded_port:
         st.info(f"📊 **نتيجة التحليل:** تم العثور على {st.session_state.plates_found} لوحة مكررة في الشيت الأساسي من أصل {st.session_state.port_plates_count} لوحة مرفوعة في المحفظة.")
         
         if st.session_state.current_owners:
-            owners_str =
+            owners_str = "، ".join(st.session_state.current_owners)
+            st.warning(f"⚠️ اللوحات المكررة مسجلة حالياً بأسماء الملاك التالين: **{owners_str}**")
+            st.write("سيتم مسح بيانات الملاك القدامى لهذه اللوحات واستبدالها بالاسم الجديد الذي ستدخله بالأسفل.")
+            default_name = st.session_state.current_owners[0]
+        else:
+            st.success("✨ هذه اللوحات جديدة تماماً وغير مسجلة مسبقاً في الشيت.")
+            default_name = ""
+
+        new_owner = st.text_input("✍️ أدخل اسم المالك الجديد (لتسجيل المحفظة باسمه):", value=default_name)
+        
+        if st.button("✅ تأكيد الاسم والتجهيز"):
+            if new_owner:
+                st.session_state.new_owner = new_owner
+                st.session_state.step = 3
+                st.rerun()
+            else:
+                st.error("يرجى إدخال اسم المالك!")
+
+    elif st.session_state.step == 3:
+        st.success(f"جاهز لتحديث الشيت وتسجيل المحفظة باسم: **{st.session_state.new_owner}**")
+        
+        if st.button("🚀 استخراج وتنزيل الملف النهائي"):
+            try:
+                wb_main = openpyxl.load_workbook(uploaded_main)
+                sheet_main = wb_main.active
+
+                # مسح الصفوف القديمة بناءً على المطابقة الدقيقة
+                for row in range(sheet_main.max_row, 1, -1):
+                    main_plate = sheet_main.cell(row=row, column=1).value
+                    if main_plate:
+                        norm_main_plate = normalize_plate(main_plate)
+                        if norm_main_plate in st.session_state.port_plates_normalized:
+                            sheet_main.delete_rows(row, 1)
+
+                # إضافة الجديد مع إصلاح اللوحة وتعديلها (حروف ثم أرقام)
+                for data in st.session_state.port_data:
+                    sheet_main.append([data['norm_plate'], data['type'], st.session_state.new_owner])
+
+                output_file = "Updated_Master_Final.xlsx"
+                wb_main.save(output_file)
+
+                with open(output_file, "rb") as f:
+                    st.download_button("📥 تحميل ملف الإكسل الآن", f, file_name="Updated_Master_Final.xlsx")
+            except Exception as e:
+                st.error(f"حدث خطأ أثناء الاستخراج: {e}")

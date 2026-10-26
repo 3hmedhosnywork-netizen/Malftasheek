@@ -5,13 +5,10 @@ import re
 st.set_page_config(page_title="تحديث الشيت الذكي بدقة", page_icon="🚗")
 st.title("🚗 نظام إدارة وتحديث شيت البنك الذكي")
 
-# دالة احترافية لتنظيف اللوحة وتوحيد تنسيقها بغض النظر عن المسافات أو الترتيب
 def clean_plate_text(text):
     if not text:
         return ""
-    # تحويل لنص وإزالة المسافات الزائدة
     text = str(text).strip()
-    # استخراج الحروف العربية والأرقام فقط لتجنب أي رموز خفية في الإكسل
     chars = "".join(re.findall(r'[\u0600-\u06FF\d]', text))
     return chars
 
@@ -29,7 +26,6 @@ if st.button("🔄 إعادة ضبط التطبيق"):
 
 if uploaded_main and uploaded_port:
     
-    # المرحلة الأولى: تحليل البيانات بدقة
     if st.session_state.step == 1:
         if st.button("🔍 بدء التحليل الدقيق ومطابقة اللوحات"):
             try:
@@ -42,13 +38,12 @@ if uploaded_main and uploaded_port:
                 port_data = []
                 port_plates_set = set()
 
-                # قراءة شيت المحفظة (نبحث في العمود الأول A للوحات)
                 for row in range(2, sheet_port.max_row + 1):
                     plate_val = sheet_port.cell(row=row, column=1).value
                     if plate_val:
                         cleaned = clean_plate_text(plate_val)
                         if cleaned:
-                            car_type = sheet_port.cell(row=row, column=4).value # عمود النوع D
+                            car_type = sheet_port.cell(row=row, column=4).value
                             port_data.append({
                                 'original': plate_val,
                                 'cleaned': cleaned,
@@ -56,7 +51,6 @@ if uploaded_main and uploaded_port:
                             })
                             port_plates_set.add(cleaned)
 
-                # قراءة الشيت الأساسي والمطابقة الدقيقة
                 matched_owners = set()
                 found_count = 0
 
@@ -66,11 +60,10 @@ if uploaded_main and uploaded_port:
                         cleaned_main = clean_plate_text(main_plate_val)
                         if cleaned_main in port_plates_set:
                             found_count += 1
-                            owner_val = sheet_main.cell(row=row, column=3).value # عمود المالك C
+                            owner_val = sheet_main.cell(row=row, column=3).value
                             if owner_val:
                                 matched_owners.add(str(owner_val).strip())
 
-                # حفظ النتائج في الذاكرة المؤقتة للتطبيق
                 st.session_state.port_data = port_data
                 st.session_state.port_plates_set = port_plates_set
                 st.session_state.matched_owners = list(matched_owners)
@@ -81,9 +74,8 @@ if uploaded_main and uploaded_port:
                 st.rerun()
 
             except Exception as e:
-                st.error(fحدث خطأ أثناء قراءة الملفات: {e}")
+                st.error(f"حدث خطأ أثناء قراءة الملفات: {e}")
 
-    # المرحلة الثانية: عرض التقرير التفاعلي وأخذ خيارات المالك
     elif st.session_state.step == 2:
         st.info(f"📊 **تقرير التحليل:** تم فحص المحفظة ووجدنا أن **{st.session_state.found_count}** لوحة (من أصل {st.session_state.total_port}) موجودة مسبقاً في الشيت الأساسي.")
 
@@ -108,7 +100,6 @@ if uploaded_main and uploaded_port:
                 else:
                     st.error("الرجاء كتابة اسم المالك بشكل صحيح.")
 
-    # المرحلة الثالثة: التحديث النهائي والحفاظ على التنسيق والمعادلات وتوليد الملف
     elif st.session_state.step == 3:
         st.success(f"جاهز الآن لتحديث البيانات واعتماد اسم المالك: **{st.session_state.final_owner}**")
         
@@ -117,12 +108,28 @@ if uploaded_main and uploaded_port:
                 wb_final = openpyxl.load_workbook(st.session_state.uploaded_main)
                 sheet_final = wb_final.active
 
-                # مسح السجلات القديمة للوحات الموجودة في المحفظة لتجنب التكرار
                 for row in range(sheet_final.max_row, 1, -1):
                     p_val = sheet_final.cell(row=row, column=1).value
                     if p_val:
                         if clean_plate_text(p_val) in st.session_state.port_plates_set:
                             sheet_final.delete_rows(row, 1)
 
-                # إضافة بيانات المحفظة الجديدة بالترتيب والتنسيق السليم
-                for item in st.session_state.
+                for item in st.session_state.port_data:
+                    sheet_final.append([item['original'], item['type'], st.session_state.final_owner])
+
+                output_filename = "Master_Sheet_Updated.xlsx"
+                wb_final.save(output_filename)
+
+                with open(output_filename, "rb") as file_download:
+                    st.download_button(
+                        label="📥 اضغط هنا لتحميل ملف الإكسل المحدث",
+                        data=file_download,
+                        file_name="Master_Sheet_Updated.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                st.balloons()
+                st.success("تم الانتهاء بنجاح واستخراج الملف جاهز للاستخدام!")
+
+            except Exception as e:
+                st.error(f"حدث خطأ أثناء معالجة وإخراج الملف: {e}")
+                

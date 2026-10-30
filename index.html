@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>دمج محافظ اللوحات</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1d4ed8">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1a1d21;--mut:#6b7280;--ac:#1d4ed8;--bd:#d9dde3;--ok:#15803d;--er:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111418;--card:#1b2027;--tx:#e8eaed;--mut:#9aa3af;--ac:#6b9bff;--bd:#2f3742;--ok:#4ade80;--er:#f87171}}
+:root[data-theme="dark"]{--bg:#111418;--card:#1b2027;--tx:#e8eaed;--mut:#9aa3af;--ac:#6b9bff;--bd:#2f3742;--ok:#4ade80;--er:#f87171}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Tahoma,Arial,sans-serif;line-height:1.6;padding:12px}
+h1{font-size:1.25rem;margin:4px 0 12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+.card h2{font-size:1rem;margin:0 0 8px}
+input[type=file],select,input[type=text]{width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font-size:1rem;margin:4px 0}
+button{background:var(--ac);color:#fff;border:0;border-radius:10px;padding:12px 16px;font-size:1rem;width:100%;margin-top:8px}
+button:disabled{opacity:.5}
+.mut{color:var(--mut);font-size:.88rem}
+.ok{color:var(--ok)}.er{color:var(--er)}
+.own{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--bd)}
+.own input{width:22px;height:22px;margin-top:3px;flex:none}
+label{display:block}
+#log{white-space:pre-wrap;font-size:.92rem}
+</style>
+</head>
+<body>
+<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v21</span></h1>
+
+<div class="card">
+<h2>١) الشيت الأساسي المجمع (xlsx)</h2>
+<input type="file" id="mainf" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+<div id="mainInfo" class="mut"></div>
+
+<button id="saveBtn" type="button" style="background:transparent;color:var(--ac);border:1px solid var(--ac)">📤 مشاركة آخر شيت</button>
+<button id="restoreBtn" hidden>استرجاع آخر شيت محفوظ</button>
+<div id="cols" hidden>
+<label class="mut">عمود اللوحة<select id="pcol"></select></label>
+<label class="mut">عمود المالك<select id="ocol"></select></label>
+</div>
+</div>
+
+<div class="card">
+<h2>٢) المحافظ المحدثة (يمكن اختيار أكثر من ملف)</h2>
+<input type="file" id="walf" multiple disabled accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv">
+<div id="walInfo" class="mut"></div>
+<div class="mut">يتم تنظيف اللوحة تلقائياً: حذف المسافات والشرطات، الحروف قبل الأرقام، وتوحيد الأرقام.</div>
+</div>
+
+<div class="card"><h2>أو الصق لوحات بدل رفع ملف</h2>
+<textarea id="paste" rows="5" placeholder="الصق اللوحات هنا، لوحة في كل سطر. ولو نسخت جدول من إكسل هيتعرف على الأعمدة تلقائياً" style="width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font-size:1rem"></textarea>
+<label class="mut">الإجراء بعد اللصق<select id="pasteMode"><option value="add">إضافة اللوحات لمالك معيّن</option><option value="del">حذف اللوحات من أصحابها</option></select></label>
+<button id="pasteBtn">تجهيز اللوحات</button></div>
+<div id="wallets"></div>
+<datalist id="dl"></datalist>
+
+<div class="card" id="applyBox" hidden>
+<button id="applyBtn">٣) تنفيذ</button>
+<div id="log"></div>
+<button id="dlBtn" hidden>📤 مشاركة الملف المحدث</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const AR="٠١٢٣٤٥٦٧٨٩",PE="۰۱۲۳۴۵۶۷۸۹";
+const RX_P=/لوح|plate/i,RX_O=/مالك|ملك|owner|عميل|بنك|اسم/i,RX_C=/هيكل|شاسي|شاص|chassis|vin/i;
+let S=null,W=[];
+
+const LA={A:"ا",B:"ب",D:"د",E:"ع",G:"ق",H:"ه",J:"ح",K:"ك",L:"ل",N:"ن",R:"ر",S:"س",T:"ط",U:"و",V:"ي",X:"ص",Z:"م"};
+function norm(s){
+  s=String(s==null?"":s).replace(/\u0640/g,"").replace(/[٠-٩]/g,d=>AR.indexOf(d)).replace(/[۰-۹]/g,d=>PE.indexOf(d)).replace(/[أإآ]/g,"ا").replace(/ى/g,"ي").toUpperCase();
+  let L=(s.match(/[\u0621-\u064A\u0671A-Z]/g)||[]).join("");
+  if(/^[A-Z]+$/.test(L)&&[...L].every(c=>LA[c]))L=[...L].reverse().map(c=>LA[c]).join("");
+  let D=(s.match(/[0-9]/g)||[]).join("");
+  while(D.length>4&&D[0]==="0")D=D.slice(1);
+  if(L.length===3&&D.length>0&&D.length<4)D=D.padStart(4,"0");
+  return {L,D,key:L+D};
+}
+function pickPlateCol(heads,data,cand){
+  const N=data.slice(0,300);
+  const stat=heads.map((_,c)=>{let v=0,a=0;N.forEach(r=>{const t=String(r[c]==null?"":r[c]);if(!t.trim())return;const z=norm(t);if(z.L&&z.D&&z.L.length<=3&&z.D.length<=5){v++;if(/[\u0621-\u064A]/.test(t)&&/[0-9٠-٩]/.test(t))a++}});return {v,a}});
+  const maxV=Math.max(0,...stat.map(x=>x.v));
+  const ar=stat.map((x,c)=>({c,a:x.a})).filter(x=>x.a>0&&x.a>=0.5*maxV);
+  if(ar.length){const hc=ar.find(x=>cand.includes(x.c));return hc?hc.c:ar.sort((p,q)=>q.a-p.a||p.c-q.c)[0].c}
+  if(cand.length)return cand[0];
+  let pi=-1,bn=0;stat.forEach((x,c)=>{if(x.v>bn){bn=x.v;pi=c}});
+  return pi;
+}
+function esc(t){return String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function ctext(c){try{return String(c.text==null?"":c.text).trim()}catch(e){return ""}}
+function log(t){$("log").textContent=t}
+
+$("mainf").onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  $("mainInfo").textContent="جاري قراءة الشيت الأساسي… قد يستغرق دقيقة";
+  try{
+    const wb=new ExcelJS.Workbook();const buf=await f.arrayBuffer();await wb.xlsx.load(buf);
+    let best=null;
+    wb.worksheets.forEach(w=>{
+      for(let r=1;r<=Math.min(30,w.rowCount);r++){
+        const hs=[];for(let c=1;c<=w.columnCount;c++)hs.push(ctext(w.getRow(r).getCell(c)));
+        const u=new Set(hs.filter(Boolean));
+        const sc=u.size+Math.min(w.rowCount/500,100)+(hs.some(t=>RX_P.test(t))?20:0)+(hs.some(t=>RX_O.test(t))?10:0)+(hs.some(t=>RX_C.test(t))?10:0);
+        if(!best||sc>best.sc||(sc===best.sc&&w.rowCount>best.w.rowCount))best={w,r,hs,sc};
+      }
+    });
+    const ws=best.w,h=best.r,heads=best.hs;
+    S={wb,ws,h,heads,sheetName:ws.name,bytes:new Uint8Array(buf),fileName:f.name==="saved.xlsx"?"الشيت المحفوظ":f.name};
+    const opts=heads.map((t,i)=>`<option value="${i+1}">${esc(t||"عمود "+(i+1))}</option>`).join("");
+    $("pcol").innerHTML=opts;$("ocol").innerHTML=opts;
+    const pi=heads.findIndex(t=>RX_P.test(t)),oi=heads.findIndex(t=>RX_O.test(t));
+    if(pi>=0)$("pcol").value=pi+1;if(oi>=0)$("ocol").value=oi+1;
+    $("cols").hidden=(pi>=0&&oi>=0);
+    buildIndex();
+    try{await DB.set("main",S.bytes)}catch(e){}$("walf").disabled=false;
+  }catch(err){$("mainInfo").innerHTML='<span class="er">تعذرت قراءة الملف: '+esc(err.message)+" (يجب أن يكون xlsx)</span>"}
+};
+$("pcol").onchange=$("ocol").onchange=()=>{buildIndex();W.forEach(analyze);renderWallets()};
+
+function buildIndex(){
+  const pc=+$("pcol").value,oc=+$("ocol").value;
+  S.pc=pc;S.oc=oc;S.idx=new Map();S.byOwner=new Map();S.ar=false;S.dump=[];
+  for(let r=S.h+1;r<=S.ws.rowCount;r++){
+    const row=S.ws.getRow(r),p=ctext(row.getCell(pc));if(!p)continue;
+    const o=ctext(row.getCell(oc)),k=norm(p).key;S.dump.push([r,k,o]);
+    if(!S.idx.has(k))S.idx.set(k,new Set());S.idx.get(k).add(o);
+    if(!S.byOwner.has(o))S.byOwner.set(o,[]);S.byOwner.get(o).push(r);
+    if(/[٠-٩]/.test(p))S.ar=true;
+  }
+  let n=0;S.idx.forEach(()=>n++);let rows=0;S.byOwner.forEach(a=>rows+=a.length);
+  $("mainInfo").innerHTML='<span class="ok">تم: '+rows+" صف ("+n+" لوحة مختلفة)، "+S.byOwner.size+" مالك · ورقة: "+esc(S.ws.name)+" · صف العناوين: "+S.h+"<br>الملف: "+esc(S.fileName||"")+" · "+new Date().toLocaleString("ar-EG")+"</span>";
+  try{DB.set("index",{pc:S.pc,oc:S.oc,h:S.h,heads:S.heads,sheetName:S.sheetName,ar:S.ar,dump:S.dump,name:S.fileName,at:Date.now(),v:4})}catch(e){}
+  $("dl").innerHTML=[...S.byOwner.keys()].map(o=>`<option value="${esc(o)}">`).join("");
+}
+
+const _cat=(...a)=>{const n=a.reduce((s,x)=>s+x.length,0),o=new Uint8Array(n);let p=0;a.forEach(x=>{o.set(x,p);p+=x.length});return o};
+const _b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const _u32=i=>{const c=new Uint8Array(4);new DataView(c.buffer).setUint32(0,i,true);return c};
+async function decryptAgile(info,pkg,pw){
+  if(!(info[0]===4&&info[1]===0&&info[2]===4&&info[3]===0))throw new Error("UNSUP");
+  const xml=new TextDecoder().decode(info.subarray(8));
+  const tag=n=>{const m=xml.match(new RegExp("<(?:[\\w]+:)?"+n+"\\b[^>]*>"));if(!m)throw new Error("UNSUP");return m[0]};
+  const at=(t,n)=>{const m=t.match(new RegExp("\\b"+n+'="([^"]*)"'));if(!m)throw new Error("UNSUP");return m[1]};
+  const kd=tag("keyData"),ek=tag("encryptedKey");
+  const HA={SHA512:"SHA-512",SHA384:"SHA-384",SHA256:"SHA-256",SHA1:"SHA-1"};
+  if(at(kd,"cipherAlgorithm")!=="AES"||at(kd,"cipherChaining")!=="ChainingModeCBC")throw new Error("UNSUP");
+  const alg=HA[at(ek,"hashAlgorithm")],kdAlg=HA[at(kd,"hashAlgorithm")];
+  if(!alg||!kdAlg)throw new Error("UNSUP");
+  const spin=+at(ek,"spinCount"),bits=+at(ek,"keyBits"),hashSize=+at(ek,"hashSize");
+  const ekSalt=_b64(at(ek,"saltValue")),kdSalt=_b64(at(kd,"saltValue"));
+  const dig=async(a,d)=>new Uint8Array(await crypto.subtle.digest(a,d));
+  const dec=async(key,iv,data)=>{
+    const n=Math.floor(data.length/16)*16;if(!n)return new Uint8Array(0);
+    data=data.subarray(0,n);
+    const pad=new Uint8Array(await crypto.subtle.encrypt({name:"AES-CBC",iv:data.subarray(n-16)},key,new Uint8Array(0)));
+    return new Uint8Array(await crypto.subtle.decrypt({name:"AES-CBC",iv},key,_cat(data,pad.subarray(0,16))));
+  };
+  const imp=raw=>crypto.subtle.importKey("raw",raw,"AES-CBC",false,["encrypt","decrypt"]);
+  const pwb=new Uint8Array(pw.length*2);for(let i=0;i<pw.length;i++){const c=pw.charCodeAt(i);pwb[2*i]=c&255;pwb[2*i+1]=c>>8}
+  let h=await dig(alg,_cat(ekSalt,pwb));
+  for(let i=0;i<spin;i++)h=await dig(alg,_cat(_u32(i),h));
+  const derive=async bk=>{const x=await dig(alg,_cat(h,Uint8Array.from(bk)));const n=bits/8;if(x.length>=n)return imp(x.subarray(0,n));const o=new Uint8Array(n).fill(0x36);o.set(x);return imp(o)};
+  const vin=await dec(await derive([0xfe,0xa7,0xd2,0x76,0x3b,0x4b,0x9e,0x79]),ekSalt,_b64(at(ek,"encryptedVerifierHashInput")));
+  const vh=await dec(await derive([0xd7,0xaa,0x0f,0x6d,0x30,0x61,0x34,0x4e]),ekSalt,_b64(at(ek,"encryptedVerifierHashValue")));
+  const calc=await dig(alg,vin.subarray(0,+at(ek,"saltSize")));
+  for(let i=0;i<hashSize;i++)if(calc[i]!==vh[i])throw new Error("BADPW");
+  const kv=await dec(await derive([0x14,0x6e,0x0b,0xe7,0xab,0xac,0xd0,0xd6]),ekSalt,_b64(at(ek,"encryptedKeyValue")));
+  const key=await imp(kv.subarray(0,bits/8));
+  const size=Number(new DataView(pkg.buffer,pkg.byteOffset,8).getBigUint64(0,true));
+  const data=pkg.subarray(8),parts=[];
+  for(let i=0,p=0;p<data.length;i++,p+=4096){
+    const iv=(await dig(kdAlg,_cat(kdSalt,_u32(i)))).subarray(0,16);
+    parts.push(await dec(key,iv,data.subarray(p,Math.min(p+4096,data.length))));
+  }
+  return _cat(...parts).subarray(0,size);
+}
+
+function askPw(name,tryFn){return new Promise((res,rej)=>{
+  const m=document.createElement("div");
+  m.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:99;padding:16px";
+  m.innerHTML='<div class="card" style="width:100%;max-width:420px;margin:0"><h2>🔒 الملف محمي برقم سري</h2><div class="mut" style="word-break:break-word">'+esc(name)+'</div><input type="password" id="pwI" placeholder="اكتب الرقم السري" autocomplete="off"><div id="pwE" style="min-height:1.5em;margin:4px 0"></div><div style="display:flex;gap:8px"><button id="pwOk" type="button">فتح</button><button id="pwNo" type="button" style="background:transparent;color:var(--ac);border:1px solid var(--ac)">إلغاء</button></div></div>';
+  document.body.appendChild(m);
+  const I=m.querySelector("#pwI"),E=m.querySelector("#pwE"),B=m.querySelector("#pwOk");
+  setTimeout(()=>I.focus(),50);
+  const go=async()=>{
+    if(!I.value||B.disabled)return;
+    B.disabled=true;E.className="mut";E.textContent="جاري فتح الملف… (ممكن ياخد كام ثانية)";
+    await new Promise(r=>setTimeout(r,30));
+    try{await tryFn(I.value);m.remove();res()}
+    catch(e){
+      if(e.message==="UNSUP"){m.remove();rej(e);return}
+      B.disabled=false;E.className="er";E.textContent="الرقم السري غلط، جرّب تاني";I.select();
+    }
+  };
+  B.onclick=go;I.onkeydown=ev=>{if(ev.key==="Enter")go()};
+  m.querySelector("#pwNo").onclick=()=>{m.remove();rej(new Error("CANCEL"))};
+})}
+async function openProtected(buf,name){
+  const u8=new Uint8Array(buf);
+  if(!(u8[0]===0xD0&&u8[1]===0xCF&&u8[2]===0x11&&u8[3]===0xE0))return buf;
+  let cfb;try{cfb=XLSX.CFB.read(u8,{type:"array"})}catch(e){return buf}
+  const ei=XLSX.CFB.find(cfb,"EncryptionInfo"),ep=XLSX.CFB.find(cfb,"EncryptedPackage");
+  if(!ei||!ep)return buf;
+  const info=Uint8Array.from(ei.content),pkg=Uint8Array.from(ep.content);
+  let out=null;
+  await askPw(name,async pw=>{out=await decryptAgile(info,pkg,pw)});
+  return out.buffer.slice(out.byteOffset,out.byteOffset+out.byteLength);
+}
+
+$("walf").onchange=async e=>{
+  W=[];
+  for(const f of e.target.files){
+    let wb;
+    try{
+      let buf=await openProtected(await f.arrayBuffer(),f.name);
+      const ro={type:"array",cellStyles:false,cellNF:false,cellHTML:false};
+      try{wb=XLSX.read(buf,ro)}
+      catch(err){
+        if(!/password|encrypt/i.test(String(err&&err.message)))throw err;
+        await askPw(f.name,async pw=>{try{wb=XLSX.read(buf,Object.assign({password:pw},ro))}catch(x){throw new Error("BADPW")}});
+      }
+    }catch(err){
+      if(err.message==="UNSUP")alert("نوع التشفير في الملف ده مش مدعوم: "+f.name+"\nافتحه في إكسل وشيل الرقم السري وارفعه تاني.");
+      else if(err.message!=="CANCEL")alert("تعذر قراءة الملف: "+f.name+"\n"+err.message);
+      continue;
+    }
+    const sh=wb.Sheets[wb.SheetNames[0]];let mr=0,mc=0;
+    for(const k in sh){if(k[0]==="!")continue;const a=XLSX.utils.decode_cell(k);if(a.r>mr)mr=a.r;if(a.c>mc)mc=a.c}
+    sh["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:mr,c:mc}});
+    const rows=XLSX.utils.sheet_to_json(sh,{header:1,raw:false,defval:""});
+    let h=rows.findIndex(r=>r.filter(x=>String(x).trim()).length>=2);if(h<0)h=0;
+    const heads=(rows[h]||[]).map(String);
+    const data=rows.slice(h+1).filter(r=>r.some(x=>String(x).trim()));
+    const cand=heads.map((t,c)=>RX_P.test(t)?c:-1).filter(c=>c>=0);
+    const pi=pickPlateCol(heads,data,cand);
+    W.push({name:f.name,heads,data,pi});
+  }
+  W.forEach(analyze);renderWallets();
+  $("walInfo").textContent="تم قراءة: "+W.map(w=>w.name+" ("+w.data.length+" صف)").join("، ");
+};
+
+function detect(w){
+  const H=w.heads,n=H.length,rows=w.data.slice(0,300);
+  const frac=(c,re)=>{let k=0,t=0;rows.forEach(r=>{const v=String(r[c]==null?"":r[c]).trim();if(v){t++;if(re.test(v.replace(/\s/g,"")))k++}});return t?k/t:0};
+  const YR=/^(19|20)\d\d$/;
+  let ci=H.findIndex((t,c)=>c!==w.pi&&RX_C.test(t));
+  if(ci<0){let b=0;for(let c=0;c<n;c++)if(c!==w.pi){const f=frac(c,/^[A-Z0-9]{17}$/i);if(f>b){b=f;ci=c}}if(b<.5)ci=-1}
+  let yi=-1,b=0;
+  for(let c=0;c<n;c++)if(c!==w.pi&&c!==ci){const f=frac(c,YR);if(f>b){b=f;yi=c}}
+  if(b<.6)yi=-1;
+  const mi=H.findIndex((t,c)=>![w.pi,ci,yi].includes(c)&&/طراز|model/i.test(t));
+  let bi=H.findIndex((t,c)=>![w.pi,ci,yi,mi].includes(c)&&/^\s*(ال)?نوع(\s*(السيارة|المركبة))?\s*$|ماركة|ماركه|make|brand|asset|vehicle|type\s*of\s*car|car\s*type|variant|مركبة|سيارة/i.test(t));
+  if(bi<0&&mi>0&&![w.pi,ci,yi].includes(mi-1))bi=mi-1;
+  w.ci=ci;w.yi=yi;w.mi=mi;w.bi=bi;
+}
+function analyze(w){
+  w.found=new Map();w.nf=0;
+  w.data.forEach(r=>{
+    const k=norm(r[w.pi]).key,s=S.idx.get(k);
+    if(!k){return}
+    if(!s){w.nf++;return}
+    s.forEach(o=>{if(!w.found.has(o))w.found.set(o,new Set());w.found.get(o).add(k)});
+  });
+  w.owners=[...w.found.keys()].sort((a,b)=>w.found.get(b).size-w.found.get(a).size);detect(w);
+}
+
+function renderWallets(){
+  $("wallets").innerHTML=W.map((w,i)=>{
+    const sel=w.heads.map((t,c)=>`<option value="${c}" ${c===w.pi?"selected":""}>${esc(t||"عمود "+(c+1))}</option>`).join("");
+    const vbtn=o=>`<br><button type="button" class="vb" style="width:auto;padding:6px 12px;margin:6px 0;background:transparent;color:var(--ac);border:1px solid var(--ac)">عرض اللوحات</button><div class="mut" hidden style="word-break:break-word">${[...w.found.get(o)].map(esc).join("، ")}</div>`;
+    const plain=w.mode?true:false;
+    const ow=w.owners.length?w.owners.map((o,j)=>`<div class="own">${plain?"":`<select class="op" data-w="${i}" data-j="${j}" style="width:auto;flex:none;max-width:42%;font-size:.9rem"><option value="0">بدون</option><option value="r">استبدال</option><option value="d">حذف المطابق</option></select>`}<div style="flex:1"><b>${esc(o||"(بدون اسم)")}</b>${!plain&&w.owners.length>1&&j===w.owners.length-1?' <span class="er">(الأقل تطابقاً)</span>':''}<br><span class="mut">يطابق ${w.found.get(o).size} لوحة من المحفظة · لديه ${S.byOwner.get(o).length} صف في الأساسي</span>${vbtn(o)}</div></div>`).join(""):'<div class="mut">لم يتم العثور على أي لوحة في الأساسي</div>';
+    const def=w.owners.length===1?w.owners[0]:"";
+    let head,nameBox;
+    if(w.mode==="del"){
+      head='<div class="mut" style="margin-top:8px">«حذف»: اللوحات دي هتتحذف من أصحابها في الأساسي، ومش هيتضاف حاجة. المالكين اللي عندهم لوحات مطابقة:</div>';
+      nameBox="";
+    }else if(w.mode==="add"){
+      head='<div class="mut" style="margin-top:8px">«إضافة»: اللوحات هتتضاف للمالك اللي تكتب اسمه تحت، من غير حذف أي حاجة. اللوحات دي موجودة بالفعل عند:</div>';
+      nameBox=`<label class="mut" style="margin-top:8px">اسم المالك اللي هتتضاف له اللوحات (اكتب أو اختر)<input type="text" list="dl" id="on${i}" value=""></label>`;
+    }else{
+      head=`<div class="mut" style="margin-top:8px">${"لكل مالك اختر: «استبدال» (حذف كل لوحاته القديمة من الأساسي وإضافة المحفظة بدلها) أو «حذف المطابق» (حذف اللوحات الظاهرة له فقط وترك باقي لوحاته):"}</div>`;
+      nameBox=`<label class="mut" style="margin-top:8px">اسم المالك للوحات الجديدة (اكتب أو اختر)<input type="text" list="dl" id="on${i}" value="${esc(def)}"></label>`;
+    }
+    const cols=w.mode==="del"?"":`<div class="mut">${[["النوع",w.bi],["الطراز",w.mi],["الموديل",w.yi],["الهيكل",w.ci]].map(([a,c])=>a+": "+(c>=0?esc(w.heads[c]||"عمود "+(c+1)):"غير موجود")).join(" · ")}</div>`;
+    return `<div class="card"><h2>${esc(w.name)}</h2>
+<label class="mut">عمود اللوحة في المحفظة<select data-w="${i}" class="wpc">${sel}</select></label>
+<div>${w.data.length} صف · <span class="ok">موجود: ${w.data.length-w.nf}</span> · <span class="er">غير موجود: ${w.nf}</span></div>
+${cols}${head}${ow}${nameBox}</div>`;
+  }).join("");
+  document.querySelectorAll(".wpc").forEach(s=>s.onchange=()=>{const w=W[+s.dataset.w];w.pi=+s.value;analyze(w);renderWallets()});
+  document.querySelectorAll(".vb").forEach(b=>b.onclick=()=>{const d=b.nextElementSibling;d.hidden=!d.hidden;b.textContent=d.hidden?"عرض اللوحات":"إخفاء اللوحات"});
+  $("applyBox").hidden=!W.length;
+}
+
+function mapCols(w){
+  const nh=s=>String(s).replace(/\s+/g,"").toLowerCase(),wh=w.heads.map(nh),m=[];
+  S.heads.forEach((H,c)=>{
+    const h=nh(H);let j=-1;
+    if(c+1===S.pc)j=-2;else if(c+1===S.oc)j=-3;
+    else if(RX_C.test(H)&&w.ci>=0)j=-4;
+    else if(/^(ال)?نوع$/.test(H)&&(w.bi>=0||w.mi>=0||w.yi>=0))j=-5;
+    else{
+      if(h)j=wh.findIndex(x=>x&&x===h);
+      if(j<0&&h)j=wh.findIndex(x=>x&&(x.includes(h)||h.includes(x)));
+      if(j<0&&RX_C.test(H))j=w.heads.findIndex(x=>RX_C.test(x));
+    }
+    m.push(j);
+  });
+  return m;
+}
+
+$("applyBtn").onclick=async()=>{
+  for(let i=0;i<W.length;i++){
+    const nb=$("on"+i);W[i].name2=nb?nb.value.trim():"";
+    if(W[i].mode!=="del"&&!W[i].name2){alert("اكتب اسم المالك للمحفظة: "+W[i].name);return}
+    W[i].del=[];W[i].dm=W[i].mode==="del"?[...W[i].owners]:[];
+    if(!W[i].mode)document.querySelectorAll(`select.op[data-w="${i}"]`).forEach(s=>{const o=W[i].owners[+s.dataset.j];if(s.value==="r")W[i].del.push(o);else if(s.value==="d")W[i].dm.push(o)});
+  }
+  const all=[...new Set(W.flatMap(w=>w.del))],dmAll=[...new Set(W.flatMap(w=>w.dm))];
+  if(!confirm("استبدال (حذف كل الصفوف): "+(all.length?all.join("، "):"لا أحد")+"\nحذف اللوحات المطابقة فقط من: "+(dmAll.length?dmAll.join("، "):"لا أحد")+"\n"+(W.filter(w=>w.mode!=="del").map(w=>"إضافة "+w.data.length+" لوحة للمالك: "+w.name2).join("\n")||"بدون إضافة")+"\nمتابعة؟"))return;
+  $("applyBtn").disabled=true;log("جاري التنفيذ…");
+  await new Promise(r=>setTimeout(r,50));
+  if(!S.wb){log("جاري تجهيز الشيت الأساسي… قد يستغرق دقيقة");await new Promise(r=>setTimeout(r,30));const wb=new ExcelJS.Workbook();await wb.xlsx.load(S.bytes);S.wb=wb;S.ws=wb.getWorksheet(S.sheetName)||wb.worksheets[0]}
+  const ws=S.ws,dels=new Set();
+  all.forEach(o=>(S.byOwner.get(o)||[]).forEach(r=>dels.add(r)));
+  W.forEach(w=>w.dm.forEach(o=>{const ks=w.found.get(o);(S.byOwner.get(o)||[]).forEach(r=>{if(ks&&ks.has(norm(ctext(ws.getRow(r).getCell(S.pc))).key))dels.add(r)})}));
+  const rs=[...dels].sort((a,b)=>a-b);
+  if(rs.length){
+    // حذف يدوي: ExcelJS.spliceRows مش بيمسح الصفوف اللي في آخر الشيت، فبنرص الصفوف الباقية لفوق ونقطع الذيل
+    const total=ws.rowCount,nc=S.heads.length;let dst=rs[0];
+    for(let r=rs[0];r<=total;r++){
+      if(dels.has(r))continue;
+      if(r!==dst){const a=ws.getRow(r),b=ws.getRow(dst);for(let c=1;c<=nc;c++){const ac=a.getCell(c),bc=b.getCell(c);bc.value=ac.value;bc.style=ac.style}}
+      dst++;
+    }
+    if(Array.isArray(ws._rows)){ws._rows.length=dst-1}
+    else{for(let r=dst;r<=total;r++){const b=ws.getRow(r);for(let c=1;c<=nc;c++)b.getCell(c).value=null}}
+  }
+  {
+    const before=new Map(all.map(o=>[o,(S.byOwner.get(o)||[]).length]));
+    const left=new Map(all.map(o=>[o,0]));let leftDm=0;
+    for(let r=S.h+1;r<=ws.rowCount;r++){
+      const row=ws.getRow(r),o=ctext(row.getCell(S.oc));
+      if(left.has(o))left.set(o,left.get(o)+1);
+      if(dmAll.includes(o)){const ks=W.map(w=>w.found.get(o)).filter(Boolean);const k=norm(ctext(row.getCell(S.pc))).key;if(ks.some(x=>x.has(k)))leftDm++}
+    }
+    const bad=[...left].filter(([,n])=>n>0);
+    if(bad.length||leftDm>0){
+      log("⚠️ فشل التحقق: بعد الحذف لسه فيه صفوف قديمة ("+bad.map(([o,n])=>o+": "+n).join("، ")+(leftDm?" · مطابقة متبقية: "+leftDm:"")+").\nماتمش اعتماد أي حاجة، والشيت الأساسي زي ما هو. ابعتلي الرسالة دي.");
+      S.wb=null;S.ws=null;$("applyBtn").disabled=false;return;
+    }
+    S._verify=[...before].map(([o,n])=>o+": كان "+n+" صف ← اتمسح كله");
+  }
+  const RU=new Map();
+  let fixed=0;
+  for(let r=S.h+1;r<=ws.rowCount;r++){
+    const cell=ws.getCell(r,S.pc),t=ctext(cell);
+    if(t&&/[A-Za-z]/.test(t)&&!/[\u0621-\u064A]/.test(t)){const z=norm(t);if(/^[\u0621-\u064A]+$/.test(z.L)&&z.D){cell.value=z.L+z.D;fixed++}}
+  }
+  S._fixed=fixed;
+  const last=ws.getRow(ws.rowCount),tpl=S.heads.map((_,c)=>JSON.parse(JSON.stringify(last.getCell(c+1).style||{})));
+  let added=0;
+  for(const w of W){
+    if(w.mode==="del")continue;
+    const m=mapCols(w);
+    for(const r of w.data){
+      const z=norm(r[w.pi]);if(!z.key)continue;
+      const plate=z.L+z.D;
+      const vals=m.map(j=>{
+        if(j===-2)return plate;if(j===-3)return w.name2;
+        if(j===-4)return String(r[w.ci]==null?"":r[w.ci]).replace(/\s/g,"").toUpperCase();
+        if(j===-5)return [w.bi,w.mi,w.yi].map(x=>x>=0?String(r[x]==null?"":r[x]).trim():"").filter(Boolean).join(" / ");
+        if(j<0)return "";
+        const v=String(r[j]).trim();
+        return /^-?\d{1,12}(\.\d+)?$/.test(v)?Number(v):v;
+      });
+      const row=ws.addRow(vals);
+      tpl.forEach((st,c)=>{row.getCell(c+1).style=st});
+      added++;
+      if(z.L&&z.D&&!RU.has(w.name2))RU.set(w.name2,{o:w.name2,p:plate,k:z.key,n:row.number});
+    }
+  }
+  // آخر 3 ملاك اتحدّثوا: لوحة من كل واحد تتكتب في أول الصفحة الأولى علشان تنوّر
+  try{
+    let prevR=[];try{const mm=/^RZ:([\s\S]*)$/.exec(S.wb.keywords||"");if(mm)prevR=JSON.parse(mm[1])}catch(e){}
+    const gone=e=>all.includes(e.o)||(dmAll.includes(e.o)&&W.some(w=>{const f=w.found.get(e.o);return f&&f.has(e.k)}));
+    const cur=[...RU.values()].reverse(),names=new Set(cur.map(e=>e.o));
+    const keep=prevR.filter(e=>e&&e.o&&e.k&&!names.has(e.o)&&!gone(e));
+    const need=new Map(keep.map(e=>[e.k,e]));
+    for(let r=S.h+1;r<=ws.rowCount&&need.size;r++){const k=norm(ctext(ws.getRow(r).getCell(S.pc))).key;const e=need.get(k);if(e){e.n=r;need.delete(k)}}
+    const recent=[...cur,...keep].filter(e=>e.n).slice(0,3);
+    recent.forEach(e=>{const rw=ws.getRow(e.n);e.v=[1,2,3,4].map(c=>{const v=rw.getCell(c).value;return v==null?"":String(v&&typeof v==="object"&&v.text?v.text:v)})});
+    S._recent=recent;
+    S.wb.keywords="RZ:"+JSON.stringify(recent.map(e=>({o:e.o,p:e.p,k:e.k})));
+  }catch(e){console.error(e);S._recent=[]}
+  try{designSheet(S.wb)}catch(e){console.error(e)}
+  try{
+    S.out=new Uint8Array(await S.wb.xlsx.writeBuffer());S.bytes=S.out;S.fileName="النسخة المحدثة بعد التنفيذ";
+    log("تم. حُذف "+rs.length+" صف، وأُضيف "+added+" صف.\n"+(S._verify||[]).join("\n")+(S._fixed?"\nتصحيح "+S._fixed+" لوحة إنجليزي إلى حروف عربي في الأساسي":"")+"\nراجع الملف قبل الاعتماد، خصوصاً الأعمدة التي بها معادلات.");
+    try{await DB.set("main",S.out)}catch(e){}$("dlBtn").hidden=false;buildIndex();W=[];renderWallets();$("walf").value="";$("walInfo").textContent="";$("applyBtn").disabled=false;$("applyBox").hidden=false;log($("log").textContent+"\nالنتيجة اتعتمدت كشيت أساسي جديد. ارفع المحفظة التالية أو نزّل الملف.");
+  }catch(err){log("خطأ أثناء إنشاء الملف: "+err.message)}
+};
+
+const XMIME="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+function saveFile(bytes){
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([bytes],{type:XMIME}));
+  a.download="تشييك Rasd Zaki.xlsx";document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000);
+}
+async function shareFile(bytes){
+  const f=new File([bytes],"تشييك Rasd Zaki.xlsx",{type:XMIME});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){
+    try{await navigator.share({files:[f],title:"Rasd Zaki"});return}
+    catch(e){if(e&&e.name==="AbortError")return}
+  }
+  saveFile(bytes);
+  alert("كروم مابيسمحش بمشاركة ملفات إكسل مباشرة من الموقع.\nنزّلت الملف في التنزيلات باسم Rasd Zaki.xlsx\nافتح تطبيق «الملفات» ← التنزيلات، اضغط على الملف مطولاً ← مشاركة ← واتساب.");
+}
+$("dlBtn").onclick=()=>{if(S&&S.out)shareFile(S.out)};
+$("saveBtn").onclick=async()=>{
+  let b=null;
+  try{b=await DB.get("main")}catch(e){}
+  if(!b&&S&&S.bytes)b=S.bytes;
+  if(!b){alert("مفيش شيت محفوظ لسه. ارفع الشيت الأساسي أو نفّذ دمج الأول.");return}
+  shareFile(b instanceof Uint8Array?b:new Uint8Array(b));
+};
+const DB={open(){return new Promise((res,rej)=>{const q=indexedDB.open("wm",1);q.onupgradeneeded=()=>q.result.createObjectStore("f");q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})},
+async set(k,v){const d=await this.open();return new Promise((res,rej)=>{const t=d.transaction("f","readwrite");t.objectStore("f").put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})},
+async get(k){const d=await this.open();return new Promise((res,rej)=>{const q=d.transaction("f").objectStore("f").get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}};
+function designSheet(wb){
+  const ws=wb.worksheets[0];
+  if(!ws||ws===S.ws)return;
+  // مهم: ExcelJS بيشارك نفس كائن الستايل بين خلايا كتير، فنعمل كائن جديد لكل خلية بدل التعديل المباشر
+  const st=(c,patch)=>{c.style=Object.assign({},c.style,patch)};
+  const solid=a=>({type:"pattern",pattern:"solid",fgColor:{argb:a},bgColor:{argb:a}});
+  const none={type:"pattern",pattern:"none"};
+  try{ws.name="تشييك"}catch(e){}
+  const CW={A:20.2,B:0.6,C:16.8,D:34.1,E:32.7,F:39.8};
+  Object.keys(CW).forEach(k=>{ws.getColumn(k).width=CW[k]});
+  [[1,33.75],[2,34.5],[3,30]].forEach(([r,h])=>{ws.getRow(r).height=h});
+  try{ws._media=[]}catch(e){}
+  // صفوف البيانات: نرجّعها للشكل الأصلي (من غير خلفية، ويصلّح أي تلوين قديم اتسرّب)
+  const last=Math.min(ws.rowCount,4999);
+  for(let r=4;r<=last;r++){
+    for(let c=1;c<=6;c++){
+      st(ws.getCell(r,c),Object.assign({font:{name:"Calibri",size:20,bold:true},fill:c===2?solid("FFFFFF00"):none,alignment:{horizontal:"center",vertical:"middle"}},c===2?{numFmt:";;;"}:{}));
+    }
+  }
+  // معادلات أسرع: بحث واحد لكل لوحة (عمود B المخفي) والباقي INDEX، والصفوف الفاضية بتتخطى
+  let anyFilled=false;
+  const RC=S._recent||[];
+  RC.forEach((e,i)=>{ws.getCell(4+i,1).value=e.p});
+  for(let r=4;r<=4999;r++){
+    const rc=RC[r-4];
+    const av=ws.getCell(r,1).value,empty=av==null||String(av).trim()==="";
+    if(!empty)anyFilled=true;
+    const put=(c,f,res)=>{const old=c.value;c.value={formula:f,result:empty?"":(res!==undefined?res:(old&&old.result!==undefined?old.result:""))}};
+    put(ws.getCell("B"+r),`IF(A${r}="","",IFERROR(MATCH(A${r},بيانات!A:A,0),""))`,rc?rc.n:"");
+    [["C","A",0],["D","B",1],["E","C",2],["F","D",3]].forEach(([L,src,ix])=>{
+      put(ws.getCell(L+r),`IF(B${r}="","",INDEX(بيانات!${src}:${src},B${r}))`,rc&&rc.v?rc.v[ix]:undefined);
+    });
+  }
+  try{wb.calcProperties=Object.assign({},wb.calcProperties,{fullCalcOnLoad:anyFilled})}catch(e){}
+  // الصف الأول
+  try{if(!ws.getCell("A1").isMerged)ws.mergeCells("A1:F1")}catch(e){}
+  const a1=ws.getCell("A1");
+  a1.value="Rasd Zaki";
+  st(a1,{font:{name:"Arial",size:20,bold:true,color:{argb:"FFFFFFFF"}},fill:solid("FF0070C0"),alignment:{horizontal:"center",vertical:"middle"}});
+  // صف العناوين
+  const HF={A:"FFFF0000",B:"FFFFFF00",C:"FFFFC000",D:"FF7030A0",E:"FF00B0F0",F:"FF00B050"};
+  Object.keys(HF).forEach(k=>{
+    const c=ws.getCell(k+"2");
+    st(c,{fill:solid(HF[k]),font:Object.assign({},c.font,{name:"Abadi",size:k==="D"?20:24})});
+  });
+  // صف "صل على محمد": 3 مرات جنب بعض على لون وردي غامق
+  const ROSE="FFC2185B";
+  try{ws.unMergeCells("A3:F3")}catch(e){}
+  for(let c=1;c<=6;c++){const x=ws.getCell(3,c);x.value=null;st(x,{fill:solid(ROSE)})}
+  const a3=ws.getCell("A3");
+  a3.value="صل على محمد        صل على محمد        صل على محمد";
+  st(a3,{font:{name:"Calibri",size:22,bold:true,italic:true,color:{argb:"FFFFFFFF"}},fill:solid(ROSE),alignment:{horizontal:"center",vertical:"middle"}});
+  try{ws.mergeCells("A3:F3")}catch(e){}
+  // ألوان اللوحة لما تنور (قاعدة بسيطة لكل عمود)
+  const CM={C:"FFFFC000",D:"FF7030A0",E:"FF00B0F0",F:"FF00B050"};
+  ws.conditionalFormattings=[];
+  Object.keys(CM).forEach((L,i)=>{
+    ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="D"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
+  });
+}
+async function fastRestore(){
+  const [b,ix]=await Promise.all([DB.get("main"),DB.get("index")]);
+  if(!b||!ix||!ix.dump||ix.v!==4)return false;
+  S={fileName:ix.name,bytes:b instanceof Uint8Array?b:new Uint8Array(b),heads:ix.heads,h:ix.h,sheetName:ix.sheetName,pc:ix.pc,oc:ix.oc,ar:ix.ar,idx:new Map(),byOwner:new Map(),dump:ix.dump};
+  ix.dump.forEach(([r,k,o])=>{
+    if(!S.idx.has(k))S.idx.set(k,new Set());S.idx.get(k).add(o);
+    if(!S.byOwner.has(o))S.byOwner.set(o,[]);S.byOwner.get(o).push(r);
+  });
+  const opts=S.heads.map((t,i)=>'<option value="'+(i+1)+'">'+esc(t||"عمود "+(i+1))+"</option>").join("");
+  $("pcol").innerHTML=opts;$("ocol").innerHTML=opts;$("pcol").value=S.pc;$("ocol").value=S.oc;$("cols").hidden=true;
+  $("mainInfo").innerHTML='<span class="ok">تم تحميل آخر شيت محفوظ: '+ix.dump.length+" صف ("+S.idx.size+" لوحة مختلفة)، "+S.byOwner.size+" مالك<br>الملف: "+esc(ix.name||"محفوظ")+(ix.at?" · آخر حفظ: "+new Date(ix.at).toLocaleString("ar-EG"):"")+"</span>";
+  $("dl").innerHTML=[...S.byOwner.keys()].map(o=>'<option value="'+esc(o)+'">').join("");
+  $("walf").disabled=false;$("restoreBtn").hidden=true;
+  return true;
+}
+(async()=>{try{if(await fastRestore())return;const b=await DB.get("main");if(b){$("restoreBtn").hidden=false;$("restoreBtn").onclick=()=>{$("restoreBtn").hidden=true;$("mainf").onchange({target:{files:[new File([b],"saved.xlsx")]}})}}}catch(e){}})();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+(async()=>{
+ if(!/[?&]shared=1/.test(location.search))return;
+ try{
+  const c=await caches.open("shared"),k=new URL("shared-file",document.baseURI).href,r=await c.match(k);
+  if(!r)return;
+  const f=new File([await r.blob()],decodeURIComponent(r.headers.get("x-name")||"shared.xlsx"));
+  await c.delete(k);history.replaceState(null,"",location.pathname);
+  const m=document.createElement("div");
+  m.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9;padding:20px";
+  m.innerHTML='<div class="card" style="max-width:420px;width:100%;margin:0"><h2>وصل ملف جديد</h2><div class="mut" id="shn"></div><button id="shM">شيت أساسي</button><button id="shW">محفظة للتحديث</button></div>';
+  document.body.appendChild(m);m.querySelector("#shn").textContent=f.name;
+  m.querySelector("#shM").onclick=async()=>{m.remove();try{const dt=new DataTransfer();dt.items.add(f);$("mainf").files=dt.files}catch(e){}await $("mainf").onchange({target:{files:[f]}})};
+  m.querySelector("#shW").onclick=async()=>{m.remove();
+   if(!S&&!(await fastRestore())){const b=await DB.get("main");if(b)await $("mainf").onchange({target:{files:[new File([b],"saved.xlsx")]}})}
+   if(!S){alert("ارفع الشيت الأساسي أولاً");return}
+   try{const dt=new DataTransfer();dt.items.add(f);$("walf").files=dt.files}catch(e){}
+   await $("walf").onchange({target:{files:[f]}})};
+ }catch(e){}
+})();
+$("pasteBtn").onclick=()=>{
+  if(!S){alert("حمّل الشيت الأساسي أولاً");return}
+  const lines=$("paste").value.split(/\r?\n/).map(l=>l.replace(/\s+$/,"")).filter(l=>l.trim());
+  if(!lines.length){alert("الصق اللوحات أولاً");return}
+  const tab=lines.some(l=>l.includes("\t"));
+  const rows=tab?lines.map(l=>l.split("\t").map(x=>x.trim())):lines.map(l=>[l.trim()]);
+  const n=Math.max(...rows.map(r=>r.length));
+  let heads,data=rows,pi=0;
+  if(rows[0].some(t=>RX_P.test(t)||RX_C.test(t))){
+    heads=rows[0];data=rows.slice(1);pi=pickPlateCol(heads,data,heads.map((t,c)=>RX_P.test(t)?c:-1).filter(c=>c>=0));if(pi<0)pi=0;
+  }else{
+    heads=Array.from({length:n},(_,i)=>i===0?"اللوحة":"عمود "+(i+1));
+    if(tab){pi=pickPlateCol(heads,data,[]);if(pi<0)pi=0}
+  }
+  data=data.map(r=>{r=r.slice();while(r.length<heads.length)r.push("");return r});
+  const mode=$("pasteMode").value;
+  const w={name:(mode==="del"?"حذف لوحات ملصوقة (":"إضافة لوحات ملصوقة (")+new Date().toLocaleTimeString("ar-EG")+")",heads,data,pi,mode};
+  W.push(w);analyze(w);renderWallets();
+  $("walInfo").textContent="تمت إضافة "+data.length+" صف من اللصق";
+  $("paste").value="";
+};
+</script>
+</body>
+</html>

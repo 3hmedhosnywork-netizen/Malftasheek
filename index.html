@@ -27,7 +27,7 @@ label{display:block}
 </style>
 </head>
 <body>
-<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v21</span></h1>
+<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v22</span></h1>
 
 <div class="card">
 <h2>١) الشيت الأساسي المجمع (xlsx)</h2>
@@ -252,8 +252,8 @@ function detect(w){
   let yi=-1,b=0;
   for(let c=0;c<n;c++)if(c!==w.pi&&c!==ci){const f=frac(c,YR);if(f>b){b=f;yi=c}}
   if(b<.6)yi=-1;
-  const mi=H.findIndex((t,c)=>![w.pi,ci,yi].includes(c)&&/طراز|model/i.test(t));
-  let bi=H.findIndex((t,c)=>![w.pi,ci,yi,mi].includes(c)&&/^\s*(ال)?نوع(\s*(السيارة|المركبة))?\s*$|ماركة|ماركه|make|brand|asset|vehicle|type\s*of\s*car|car\s*type|variant|مركبة|سيارة/i.test(t));
+  const mi=H.findIndex((t,c)=>![w.pi,ci,yi].includes(c)&&/طراز|model|موديل/i.test(t));
+  let bi=H.findIndex((t,c)=>![w.pi,ci,yi,mi].includes(c)&&/^\s*(ال)?نوع(\s*(السيارة|المركبة))?\s*$|ماركة|ماركه|make|brand|asset|vehicle|type\s*of\s*car|car\s*type|variant|مرك[هة]|مركبة|سيارة/i.test(t));
   if(bi<0&&mi>0&&![w.pi,ci,yi].includes(mi-1))bi=mi-1;
   w.ci=ci;w.yi=yi;w.mi=mi;w.bi=bi;
 }
@@ -374,7 +374,7 @@ $("applyBtn").onclick=async()=>{
       const vals=m.map(j=>{
         if(j===-2)return plate;if(j===-3)return w.name2;
         if(j===-4)return String(r[w.ci]==null?"":r[w.ci]).replace(/\s/g,"").toUpperCase();
-        if(j===-5)return [w.bi,w.mi,w.yi].map(x=>x>=0?String(r[x]==null?"":r[x]).trim():"").filter(Boolean).join(" / ");
+        if(j===-5)return [w.bi,w.mi,w.yi].map(x=>x>=0?String(r[x]==null?"":r[x]).trim():"").filter(v=>v&&!/^(بدون|لا\s*يوجد|غير\s*(موجود|محدد)|-+|—|n\/?a|null|none)$/i.test(v)).join(" / ");
         if(j<0)return "";
         const v=String(r[j]).trim();
         return /^-?\d{1,12}(\.\d+)?$/.test(v)?Number(v):v;

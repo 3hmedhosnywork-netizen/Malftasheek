@@ -72,8 +72,8 @@ let S=null,W=[];
 
 const LA={A:"ا",B:"ب",D:"د",E:"ع",G:"ق",H:"ه",J:"ح",K:"ك",L:"ل",N:"ن",R:"ر",S:"س",T:"ط",U:"و",V:"ي",X:"ص",Z:"م"};
 function norm(s){
-  s=String(s==null?"":s).replace(/\u0640/g,"").replace(/[٠-٩]/g,d=>AR.indexOf(d)).replace(/[۰-۹]/g,d=>PE.indexOf(d)).replace(/[أإآ]/g,"ا").replace(/ى/g,"ي").toUpperCase();
-  let L=(s.match(/[\u0621-\u064A\u0671A-Z]/g)||[]).join("");
+  s=String(s==null?"":s).replace(/ـ/g,"").replace(/[٠-٩]/g,d=>AR.indexOf(d)).replace(/[۰-۹]/g,d=>PE.indexOf(d)).replace(/[أإآ]/g,"ا").replace(/ى/g,"ي").toUpperCase();
+  let L=(s.match(/[ء-يٱA-Z]/g)||[]).join("");
   if(/^[A-Z]+$/.test(L)&&[...L].every(c=>LA[c]))L=[...L].reverse().map(c=>LA[c]).join("");
   let D=(s.match(/[0-9]/g)||[]).join("");
   while(D.length>4&&D[0]==="0")D=D.slice(1);
@@ -82,7 +82,7 @@ function norm(s){
 }
 function pickPlateCol(heads,data,cand){
   const N=data.slice(0,300);
-  const stat=heads.map((_,c)=>{let v=0,a=0;N.forEach(r=>{const t=String(r[c]==null?"":r[c]);if(!t.trim())return;const z=norm(t);if(z.L&&z.D&&z.L.length<=3&&z.D.length<=5){v++;if(/[\u0621-\u064A]/.test(t)&&/[0-9٠-٩]/.test(t))a++}});return {v,a}});
+  const stat=heads.map((_,c)=>{let v=0,a=0;N.forEach(r=>{const t=String(r[c]==null?"":r[c]);if(!t.trim())return;const z=norm(t);if(z.L&&z.D&&z.L.length<=3&&z.D.length<=5){v++;if(/[ء-ي]/.test(t)&&/[0-9٠-٩]/.test(t))a++}});return {v,a}});
   const maxV=Math.max(0,...stat.map(x=>x.v));
   const ar=stat.map((x,c)=>({c,a:x.a})).filter(x=>x.a>0&&x.a>=0.5*maxV);
   if(ar.length){const hc=ar.find(x=>cand.includes(x.c));return hc?hc.c:ar.sort((p,q)=>q.a-p.a||p.c-q.c)[0].c}
@@ -143,8 +143,8 @@ const _u32=i=>{const c=new Uint8Array(4);new DataView(c.buffer).setUint32(0,i,tr
 async function decryptAgile(info,pkg,pw){
   if(!(info[0]===4&&info[1]===0&&info[2]===4&&info[3]===0))throw new Error("UNSUP");
   const xml=new TextDecoder().decode(info.subarray(8));
-  const tag=n=>{const m=xml.match(new RegExp("<(?:[\\w]+:)?"+n+"\\b[^>]*>"));if(!m)throw new Error("UNSUP");return m[0]};
-  const at=(t,n)=>{const m=t.match(new RegExp("\\b"+n+'="([^"]*)"'));if(!m)throw new Error("UNSUP");return m[1]};
+  const tag=n=>{const m=xml.match(new RegExp("<(?:[\w]+:)?"+n+"\b[^>]*>"));if(!m)throw new Error("UNSUP");return m[0]};
+  const at=(t,n)=>{const m=t.match(new RegExp("\b"+n+'="([^"]*)"'));if(!m)throw new Error("UNSUP");return m[1]};
   const kd=tag("keyData"),ek=tag("encryptedKey");
   const HA={SHA512:"SHA-512",SHA384:"SHA-384",SHA256:"SHA-256",SHA1:"SHA-1"};
   if(at(kd,"cipherAlgorithm")!=="AES"||at(kd,"cipherChaining")!=="ChainingModeCBC")throw new Error("UNSUP");
@@ -224,8 +224,10 @@ $("walf").onchange=async e=>{
         await askPw(f.name,async pw=>{try{wb=XLSX.read(buf,Object.assign({password:pw},ro))}catch(x){throw new Error("BADPW")}});
       }
     }catch(err){
-      if(err.message==="UNSUP")alert("نوع التشفير في الملف ده مش مدعوم: "+f.name+"\nافتحه في إكسل وشيل الرقم السري وارفعه تاني.");
-      else if(err.message!=="CANCEL")alert("تعذر قراءة الملف: "+f.name+"\n"+err.message);
+      if(err.message==="UNSUP")alert("نوع التشفير في الملف ده مش مدعوم: "+f.name+"
+افتحه في إكسل وشيل الرقم السري وارفعه تاني.");
+      else if(err.message!=="CANCEL")alert("تعذر قراءة الملف: "+f.name+"
+"+err.message);
       continue;
     }
     const sh=wb.Sheets[wb.SheetNames[0]];let mr=0,mc=0;
@@ -322,7 +324,11 @@ $("applyBtn").onclick=async()=>{
     if(!W[i].mode)document.querySelectorAll(`select.op[data-w="${i}"]`).forEach(s=>{const o=W[i].owners[+s.dataset.j];if(s.value==="r")W[i].del.push(o);else if(s.value==="d")W[i].dm.push(o)});
   }
   const all=[...new Set(W.flatMap(w=>w.del))],dmAll=[...new Set(W.flatMap(w=>w.dm))];
-  if(!confirm("استبدال (حذف كل الصفوف): "+(all.length?all.join("، "):"لا أحد")+"\nحذف اللوحات المطابقة فقط من: "+(dmAll.length?dmAll.join("، "):"لا أحد")+"\n"+(W.filter(w=>w.mode!=="del").map(w=>"إضافة "+w.data.length+" لوحة للمالك: "+w.name2).join("\n")||"بدون إضافة")+"\nمتابعة؟"))return;
+  if(!confirm("استبدال (حذف كل الصفوف): "+(all.length?all.join("، "):"لا أحد")+"
+حذف اللوحات المطابقة فقط من: "+(dmAll.length?dmAll.join("، "):"لا أحد")+"
+"+(W.filter(w=>w.mode!=="del").map(w=>"إضافة "+w.data.length+" لوحة للمالك: "+w.name2).join("
+")||"بدون إضافة")+"
+متابعة؟"))return;
   $("applyBtn").disabled=true;log("جاري التنفيذ…");
   await new Promise(r=>setTimeout(r,50));
   if(!S.wb){log("جاري تجهيز الشيت الأساسي… قد يستغرق دقيقة");await new Promise(r=>setTimeout(r,30));const wb=new ExcelJS.Workbook();await wb.xlsx.load(S.bytes);S.wb=wb;S.ws=wb.getWorksheet(S.sheetName)||wb.worksheets[0]}
@@ -351,7 +357,8 @@ $("applyBtn").onclick=async()=>{
     }
     const bad=[...left].filter(([,n])=>n>0);
     if(bad.length||leftDm>0){
-      log("⚠️ فشل التحقق: بعد الحذف لسه فيه صفوف قديمة ("+bad.map(([o,n])=>o+": "+n).join("، ")+(leftDm?" · مطابقة متبقية: "+leftDm:"")+").\nماتمش اعتماد أي حاجة، والشيت الأساسي زي ما هو. ابعتلي الرسالة دي.");
+      log("⚠️ فشل التحقق: بعد الحذف لسه فيه صفوف قديمة ("+bad.map(([o,n])=>o+": "+n).join("، ")+(leftDm?" · مطابقة متبقية: "+leftDm:"")+").
+ماتمش اعتماد أي حاجة، والشيت الأساسي زي ما هو. ابعتلي الرسالة دي.");
       S.wb=null;S.ws=null;$("applyBtn").disabled=false;return;
     }
     S._verify=[...before].map(([o,n])=>o+": كان "+n+" صف ← اتمسح كله");
@@ -360,7 +367,7 @@ $("applyBtn").onclick=async()=>{
   let fixed=0;
   for(let r=S.h+1;r<=ws.rowCount;r++){
     const cell=ws.getCell(r,S.pc),t=ctext(cell);
-    if(t&&/[A-Za-z]/.test(t)&&!/[\u0621-\u064A]/.test(t)){const z=norm(t);if(/^[\u0621-\u064A]+$/.test(z.L)&&z.D){cell.value=z.L+z.D;fixed++}}
+    if(t&&/[A-Za-z]/.test(t)&&!/[ء-ي]/.test(t)){const z=norm(t);if(/^[ء-ي]+$/.test(z.L)&&z.D){cell.value=z.L+z.D;fixed++}}
   }
   S._fixed=fixed;
   const last=ws.getRow(ws.rowCount),tpl=S.heads.map((_,c)=>JSON.parse(JSON.stringify(last.getCell(c+1).style||{})));
@@ -401,8 +408,13 @@ $("applyBtn").onclick=async()=>{
   try{designSheet(S.wb)}catch(e){console.error(e)}
   try{
     S.out=new Uint8Array(await S.wb.xlsx.writeBuffer());S.bytes=S.out;S.fileName="النسخة المحدثة بعد التنفيذ";
-    log("تم. حُذف "+rs.length+" صف، وأُضيف "+added+" صف.\n"+(S._verify||[]).join("\n")+(S._fixed?"\nتصحيح "+S._fixed+" لوحة إنجليزي إلى حروف عربي في الأساسي":"")+"\nراجع الملف قبل الاعتماد، خصوصاً الأعمدة التي بها معادلات.");
-    try{await DB.set("main",S.out)}catch(e){}$("dlBtn").hidden=false;buildIndex();W=[];renderWallets();$("walf").value="";$("walInfo").textContent="";$("applyBtn").disabled=false;$("applyBox").hidden=false;log($("log").textContent+"\nالنتيجة اتعتمدت كشيت أساسي جديد. ارفع المحفظة التالية أو نزّل الملف.");
+    log("تم. حُذف "+rs.length+" صف، وأُضيف "+added+" صف.
+"+(S._verify||[]).join("
+")+(S._fixed?"
+تصحيح "+S._fixed+" لوحة إنجليزي إلى حروف عربي في الأساسي":"")+"
+راجع الملف قبل الاعتماد، خصوصاً الأعمدة التي بها معادلات.");
+    try{await DB.set("main",S.out)}catch(e){}$("dlBtn").hidden=false;buildIndex();W=[];renderWallets();$("walf").value="";$("walInfo").textContent="";$("applyBtn").disabled=false;$("applyBox").hidden=false;log($("log").textContent+"
+النتيجة اتعتمدت كشيت أساسي جديد. ارفع المحفظة التالية أو نزّل الملف.");
   }catch(err){log("خطأ أثناء إنشاء الملف: "+err.message)}
 };
 
@@ -420,7 +432,9 @@ async function shareFile(bytes){
     catch(e){if(e&&e.name==="AbortError")return}
   }
   saveFile(bytes);
-  alert("كروم مابيسمحش بمشاركة ملفات إكسل مباشرة من الموقع.\nنزّلت الملف في التنزيلات باسم Rasd Zaki.xlsx\nافتح تطبيق «الملفات» ← التنزيلات، اضغط على الملف مطولاً ← مشاركة ← واتساب.");
+  alert("كروم مابيسمحش بمشاركة ملفات إكسل مباشرة من الموقع.
+نزّلت الملف في التنزيلات باسم Rasd Zaki.xlsx
+افتح تطبيق «الملفات» ← التنزيلات، اضغط على الملف مطولاً ← مشاركة ← واتساب.");
 }
 $("dlBtn").onclick=()=>{if(S&&S.out)shareFile(S.out)};
 $("saveBtn").onclick=async()=>{
@@ -487,10 +501,10 @@ function designSheet(wb){
   st(a3,{font:{name:"Calibri",size:22,bold:true,italic:true,color:{argb:"FFFFFFFF"}},fill:solid(ROSE),alignment:{horizontal:"center",vertical:"middle"}});
   try{ws.mergeCells("A3:F3")}catch(e){}
   // ألوان اللوحة لما تنور (قاعدة بسيطة لكل عمود)
-  const CM={C:"FFFFC000",D:"FF7030A0",E:"FF00B0F0",F:"FF00B050"};
+  const CM={C:"FF23B14D",D:"FF00B0F0",E:"FFFFFF00",F:"FFFFC000"};
   ws.conditionalFormattings=[];
   Object.keys(CM).forEach((L,i)=>{
-    ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="D"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
+    ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:{fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}}}]},);
   });
 }
 async function fastRestore(){
@@ -531,10 +545,11 @@ if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(
 })();
 $("pasteBtn").onclick=()=>{
   if(!S){alert("حمّل الشيت الأساسي أولاً");return}
-  const lines=$("paste").value.split(/\r?\n/).map(l=>l.replace(/\s+$/,"")).filter(l=>l.trim());
+  const lines=$("paste").value.split(/?
+/).map(l=>l.replace(/\s+$/,"")).filter(l=>l.trim());
   if(!lines.length){alert("الصق اللوحات أولاً");return}
-  const tab=lines.some(l=>l.includes("\t"));
-  const rows=tab?lines.map(l=>l.split("\t").map(x=>x.trim())):lines.map(l=>[l.trim()]);
+  const tab=lines.some(l=>l.includes("	"));
+  const rows=tab?lines.map(l=>l.split("	").map(x=>x.trim())):lines.map(l=>[l.trim()]);
   const n=Math.max(...rows.map(r=>r.length));
   let heads,data=rows,pi=0;
   if(rows[0].some(t=>RX_P.test(t)||RX_C.test(t))){

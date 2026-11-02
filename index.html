@@ -447,9 +447,13 @@ function designSheet(wb){
   try{ws._media=[]}catch(e){}
   // صفوف البيانات: نرجّعها للشكل الأصلي (من غير خلفية، ويصلّح أي تلوين قديم اتسرّب)
   const last=Math.min(ws.rowCount,4999);
+  const DF={B:"FF4BA75E",C:"FF4FADEA",D:"FFFFFF54",E:"FF00B0F0",F:"FF7030A0"};
   for(let r=4;r<=last;r++){
     for(let c=1;c<=6;c++){
-      st(ws.getCell(r,c),Object.assign({font:Object.assign({name:"Calibri",size:20,bold:true},c===4?{color:{argb:"FFFFFFFF"}}:{}),fill:c===2?solid("FFFFFF00"):none,alignment:{horizontal:"center",vertical:"middle"}},c===2?{numFmt:";;;"}:{}));
+      const L=String.fromCharCode(64+c),fill=DF[L]?solid(DF[L]):none;
+      const patch={font:{name:"Calibri",size:20,bold:true},fill,alignment:{horizontal:"center",vertical:"middle"}};
+      if(L==="F")patch.font={name:"Calibri",size:20,bold:true,color:{argb:"FFFFFFFF"}};
+      st(ws.getCell(r,c),Object.assign(patch,L==="B"?{numFmt:";;;"}:{}));
     }
   }
   // معادلات أسرع: بحث واحد لكل لوحة (عمود B المخفي) والباقي INDEX، والصفوف الفاضية بتتخطى
@@ -473,10 +477,12 @@ function designSheet(wb){
   a1.value="Rasd Zaki";
   st(a1,{font:{name:"Arial",size:20,bold:true,color:{argb:"FFFFFFFF"}},fill:solid("FF0070C0"),alignment:{horizontal:"center",vertical:"middle"}});
   // صف العناوين
-  const HF={A:"FFFF0000",B:"FFFFFF00",C:"FFFFC000",D:"FF7030A0",E:"FF00B0F0",F:"FF00B050"};
+  const HF={A:"FF325223",B:"FF4BA75E",C:"FF4FADEA",D:"FFFFFF54",E:"FF00B0F0",F:"FF7030A0"};
   Object.keys(HF).forEach(k=>{
     const c=ws.getCell(k+"2");
-    st(c,{fill:solid(HF[k]),font:Object.assign({},c.font,{name:"Abadi",size:k==="D"?20:24,...(k==="D"?{color:{argb:"FFFFFFFF"}}:{})})});
+    const font=Object.assign({},c.font,{name:"Abadi",size:k==="D"?20:24});
+    if(k==="F")font.color={argb:"FFFFFFFF"};
+    st(c,{fill:solid(HF[k]),font});
   });
   // صف "صل على محمد": 3 مرات جنب بعض على لون وردي غامق
   const ROSE="FFC2185B";
@@ -487,10 +493,10 @@ function designSheet(wb){
   st(a3,{font:{name:"Calibri",size:22,bold:true,italic:true,color:{argb:"FFFFFFFF"}},fill:solid(ROSE),alignment:{horizontal:"center",vertical:"middle"}});
   try{ws.mergeCells("A3:F3")}catch(e){}
   // ألوان اللوحة لما تنور (قاعدة بسيطة لكل عمود)
-  const CM={C:"FFFFC000",D:"FF7030A0",E:"FF00B0F0",F:"FF00B050"};
+  const CM={B:"FF4BA75E",C:"FF4FADEA",D:"FFFFFF54",E:"FF00B0F0",F:"FF7030A0"};
   ws.conditionalFormattings=[];
   Object.keys(CM).forEach((L,i)=>{
-    ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="D"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
+    ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="F"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
   });
 }
 async function fastRestore(){

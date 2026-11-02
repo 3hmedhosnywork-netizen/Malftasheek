@@ -449,7 +449,7 @@ function designSheet(wb){
   const last=Math.min(ws.rowCount,4999);
   for(let r=4;r<=last;r++){
     for(let c=1;c<=6;c++){
-      st(ws.getCell(r,c),Object.assign({font:{name:"Calibri",size:20,bold:true},fill:c===2?solid("FFFFFF00"):none,alignment:{horizontal:"center",vertical:"middle"}},c===2?{numFmt:";;;"}:{}));
+      st(ws.getCell(r,c),Object.assign({font:Object.assign({name:"Calibri",size:20,bold:true},c===4?{color:{argb:"FFFFFFFF"}}:{}),fill:c===2?solid("FFFFFF00"):none,alignment:{horizontal:"center",vertical:"middle"}},c===2?{numFmt:";;;"}:{}));
     }
   }
   // معادلات أسرع: بحث واحد لكل لوحة (عمود B المخفي) والباقي INDEX، والصفوف الفاضية بتتخطى
@@ -476,7 +476,7 @@ function designSheet(wb){
   const HF={A:"FFFF0000",B:"FFFFFF00",C:"FFFFC000",D:"FF7030A0",E:"FF00B0F0",F:"FF00B050"};
   Object.keys(HF).forEach(k=>{
     const c=ws.getCell(k+"2");
-    st(c,{fill:solid(HF[k]),font:Object.assign({},c.font,{name:"Abadi",size:k==="D"?20:24})});
+    st(c,{fill:solid(HF[k]),font:Object.assign({},c.font,{name:"Abadi",size:k==="D"?20:24,...(k==="D"?{color:{argb:"FFFFFFFF"}}:{})})});
   });
   // صف "صل على محمد": 3 مرات جنب بعض على لون وردي غامق
   const ROSE="FFC2185B";

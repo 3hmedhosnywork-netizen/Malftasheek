@@ -273,14 +273,14 @@ function renderWallets(){
     const sel=w.heads.map((t,c)=>`<option value="${c}" ${c===w.pi?"selected":""}>${esc(t||"عمود "+(c+1))}</option>`).join("");
     const vbtn=o=>`<br><button type="button" class="vb" style="width:auto;padding:6px 12px;margin:6px 0;background:transparent;color:var(--ac);border:1px solid var(--ac)">عرض اللوحات</button><div class="mut" hidden style="word-break:break-word">${[...w.found.get(o)].map(esc).join("، ")}</div>`;
     const plain=w.mode?true:false;
-    const ow=w.owners.length?w.owners.map((o,j)=>`<div class="own">${plain?"":`<select class="op" data-w="${i}" data-j="${j}" style="width:auto;flex:none;max-width:42%;font-size:.9rem"><option value="0">بدون</option><option value="r">استبدال</option><option value="d">حذف المطابق</option></select>`}<div style="flex:1"><b>${esc(o||"(بدون اسم)")}</b>${!plain&&w.owners.length>1&&j===w.owners.length-1?' <span class="er">(الأقل تطابقاً)</span>':''}<br><span class="mut">يطابق ${w.found.get(o).size} لوحة من المحفظة · لديه ${S.byOwner.get(o).length} صف في الأساسي</span>${vbtn(o)}</div></div>`).join(""):'<div class="mut">لم يتم العثور على أي لوحة في الأساسي</div>';
+    const ow=w.owners.length?w.owners.map((o,j)=>`<div class="own">${w.mode==="add"?`<label style="display:flex;align-items:center;gap:6px;flex:none"><input type="checkbox" class="pasteDelOwner" data-w="${i}" data-j="${j}" style="width:20px;height:20px">حذف المطابق</label>`:plain?"":`<select class="op" data-w="${i}" data-j="${j}" style="width:auto;flex:none;max-width:42%;font-size:.9rem"><option value="0">بدون</option><option value="r">استبدال</option><option value="d">حذف المطابق</option></select>`}<div style="flex:1"><b>${esc(o||"(بدون اسم)")}</b>${!plain&&w.mode!=="add"&&w.owners.length>1&&j===w.owners.length-1?' <span class="er">(الأقل تطابقاً)</span>':''}<br><span class="mut">يطابق ${w.found.get(o).size} لوحة من المحفظة · لديه ${S.byOwner.get(o).length} صف في الأساسي</span>${vbtn(o)}</div></div>`).join(""):'<div class="mut">لم يتم العثور على أي لوحة في الأساسي</div>';
     const def=w.owners.length===1?w.owners[0]:"";
     let head,nameBox;
     if(w.mode==="del"){
       head='<div class="mut" style="margin-top:8px">«حذف»: اللوحات دي هتتحذف من أصحابها في الأساسي، ومش هيتضاف حاجة. المالكين اللي عندهم لوحات مطابقة:</div>';
       nameBox="";
     }else if(w.mode==="add"){
-      head='<div class="mut" style="margin-top:8px">«إضافة»: اللوحات هتتضاف للمالك اللي تكتب اسمه تحت، من غير حذف أي حاجة. اللوحات دي موجودة بالفعل عند:</div>';
+      head='<div class="mut" style="margin-top:8px">حدد مربع «حذف المطابق» أمام أي مالك تريد حذف اللوحات الملصوقة من محفظته. وعند الإضافة لمالك موجود، سيتم تخطي اللوحات الموجودة عنده وإضافة الجديدة فقط:</div>';
       nameBox=`<label class="mut" style="margin-top:8px">اسم المالك اللي هتتضاف له اللوحات (اكتب أو اختر)<input type="text" list="dl" id="on${i}" value=""></label>`;
     }else{
       head=`<div class="mut" style="margin-top:8px">${"لكل مالك اختر: «استبدال» (حذف كل لوحاته القديمة من الأساسي وإضافة المحفظة بدلها) أو «حذف المطابق» (حذف اللوحات الظاهرة له فقط وترك باقي لوحاته):"}</div>`;
@@ -319,6 +319,7 @@ $("applyBtn").onclick=async()=>{
     const nb=$("on"+i);W[i].name2=nb?nb.value.trim():"";
     if(W[i].mode!=="del"&&!W[i].name2){alert("اكتب اسم المالك للمحفظة: "+W[i].name);return}
     W[i].del=[];W[i].dm=W[i].mode==="del"?[...W[i].owners]:[];
+    if(W[i].mode==="add")document.querySelectorAll(`input.pasteDelOwner[data-w="${i}"]:checked`).forEach(c=>{const o=W[i].owners[+c.dataset.j];if(o!==W[i].name2)W[i].dm.push(o)});
     if(!W[i].mode)document.querySelectorAll(`select.op[data-w="${i}"]`).forEach(s=>{const o=W[i].owners[+s.dataset.j];if(s.value==="r")W[i].del.push(o);else if(s.value==="d")W[i].dm.push(o)});
   }
   const all=[...new Set(W.flatMap(w=>w.del))],dmAll=[...new Set(W.flatMap(w=>w.dm))];
@@ -368,8 +369,13 @@ $("applyBtn").onclick=async()=>{
   for(const w of W){
     if(w.mode==="del")continue;
     const m=mapCols(w);
+    const targetKeys=new Set((S.byOwner.get(w.name2)||[]).map(rr=>norm(ctext(ws.getRow(rr).getCell(S.pc))).key));
+    const addedKeys=new Set();
     for(const r of w.data){
       const z=norm(r[w.pi]);if(!z.key)continue;
+      // في اللصق: لا نكرر لوحة موجودة بالفعل عند المالك المستهدف، ولا نكررها مرتين من نفس اللصق.
+      if(w.mode==="add"&&(targetKeys.has(z.key)||addedKeys.has(z.key)))continue;
+      addedKeys.add(z.key);
       const plate=z.L+z.D;
       const vals=m.map(j=>{
         if(j===-2)return plate;if(j===-3)return w.name2;

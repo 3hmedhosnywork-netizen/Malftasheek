@@ -452,21 +452,23 @@ function designSheet(wb){
       st(ws.getCell(r,c),Object.assign({font:{name:"Calibri",size:20,bold:true},fill:c===2?solid("FFFFFF00"):none,alignment:{horizontal:"center",vertical:"middle"}},c===2?{numFmt:";;;"}:{}));
     }
   }
-  // معادلات أسرع: بحث واحد لكل لوحة (عمود B المخفي) والباقي INDEX، والصفوف الفاضية بتتخطى
-  let anyFilled=false;
+  // تسريع البحث: تحديد نطاق بيانات اللوحات الفعلي بدلاً من فحص مليون صف في العمود كله.
+  const dataSheet=wb.getWorksheet("بيانات")||wb.worksheets.find(x=>x!==ws);
+  const dataLast=Math.max(1,dataSheet?dataSheet.rowCount:1);
+  const plateRange=`بيانات!$A$1:$A$${dataLast}`;
   const RC=S._recent||[];
   RC.forEach((e,i)=>{ws.getCell(4+i,1).value=e.p});
   for(let r=4;r<=4999;r++){
     const rc=RC[r-4];
     const av=ws.getCell(r,1).value,empty=av==null||String(av).trim()==="";
-    if(!empty&&!rc)anyFilled=true;
     const put=(c,f,res)=>{const old=c.value;c.value={formula:f,result:empty?"":(res!==undefined?res:(old&&old.result!==undefined?old.result:""))}};
-    put(ws.getCell("B"+r),`IF(A${r}="","",IFERROR(MATCH(A${r},بيانات!A:A,0),""))`,rc?rc.n:"");
+    put(ws.getCell("B"+r),`IF(A${r}="","",IFERROR(MATCH(A${r},${plateRange},0),""))`,rc?rc.n:"");
     [["C","A",0],["D","B",1],["E","C",2],["F","D",3]].forEach(([L,src,ix])=>{
-      put(ws.getCell(L+r),`IF(B${r}="","",INDEX(بيانات!${src}:${src},B${r}))`,rc&&rc.v?rc.v[ix]:undefined);
+      put(ws.getCell(L+r),`IF(B${r}="","",INDEX(بيانات!$${src}$1:$${src}$${dataLast},B${r}))`,rc&&rc.v?rc.v[ix]:undefined);
     });
   }
-  try{wb.calcProperties=Object.assign({},wb.calcProperties,{calcId:191029,fullCalcOnLoad:anyFilled})}catch(e){}
+  // لا نطلب إعادة حساب آلاف الخلايا عند فتح الملف؛ Excel يعيد حساب صف اللوحة عند تغييره.
+  try{wb.calcProperties=Object.assign({},wb.calcProperties,{calcId:191029,calcMode:"auto",fullCalcOnLoad:false,forceFullCalc:false})}catch(e){}
   // الصف الأول
   try{if(!ws.getCell("A1").isMerged)ws.mergeCells("A1:F1")}catch(e){}
   const a1=ws.getCell("A1");

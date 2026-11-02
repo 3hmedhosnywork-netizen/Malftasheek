@@ -504,7 +504,7 @@ function designSheet(wb){
   const CM={C:"FF23B14D",D:"FF00B0F0",E:"FFFFFF00",F:"FFFFC000"};
   ws.conditionalFormattings=[];
   Object.keys(CM).forEach((L,i)=>{
-    ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:{fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}}}]},);
+    ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="D"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
   });
 }
 async function fastRestore(){

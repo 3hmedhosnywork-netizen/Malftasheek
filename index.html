@@ -27,7 +27,7 @@ label{display:block}
 </style>
 </head>
 <body>
-<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v24</span></h1>
+<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v23</span></h1>
 
 <div class="card">
 <h2>١) الشيت الأساسي المجمع (xlsx)</h2>
@@ -46,7 +46,6 @@ label{display:block}
 <h2>٢) المحافظ المحدثة (يمكن اختيار أكثر من ملف)</h2>
 <input type="file" id="walf" multiple disabled accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv">
 <div id="walInfo" class="mut"></div>
- <div class="mut">لو ملف المحفظة محمي بكلمة مرور، هتظهر نافذة تطلبها منك قبل قراءة البيانات. لو كلمة المرور غلط، تقدر تحاول تاني.</div>
 <div class="mut">يتم تنظيف اللوحة تلقائياً: حذف المسافات والشرطات، الحروف قبل الأرقام، وتوحيد الأرقام.</div>
 </div>
 
@@ -448,9 +447,13 @@ function designSheet(wb){
   try{ws._media=[]}catch(e){}
   // صفوف البيانات: نرجّعها للشكل الأصلي (من غير خلفية، ويصلّح أي تلوين قديم اتسرّب)
   const last=Math.min(ws.rowCount,4999);
+  const DF={B:"FF4BA75E",C:"FF4FADEA",D:"FFFFFF54",E:"FF00B0F0",F:"FF7030A0"};
   for(let r=4;r<=last;r++){
     for(let c=1;c<=6;c++){
-      st(ws.getCell(r,c),Object.assign({font:{name:"Calibri",size:20,bold:true},fill:c===2?solid("FFFFFF00"):none,alignment:{horizontal:"center",vertical:"middle"}},c===2?{numFmt:";;;"}:{}));
+      const L=String.fromCharCode(64+c),fill=DF[L]?solid(DF[L]):none;
+      const patch={font:{name:"Calibri",size:20,bold:true},fill,alignment:{horizontal:"center",vertical:"middle"}};
+      if(L==="F")patch.font={name:"Calibri",size:20,bold:true,color:{argb:"FFFFFFFF"}};
+      st(ws.getCell(r,c),Object.assign(patch,L==="B"?{numFmt:";;;"}:{}));
     }
   }
   // معادلات أسرع: بحث واحد لكل لوحة (عمود B المخفي) والباقي INDEX، والصفوف الفاضية بتتخطى
@@ -472,15 +475,13 @@ function designSheet(wb){
   try{if(!ws.getCell("A1").isMerged)ws.mergeCells("A1:F1")}catch(e){}
   const a1=ws.getCell("A1");
   a1.value="Rasd Zaki";
-  st(a1,{font:{name:"Arial",size:20,bold:true,color:{argb:"FFFFFFFF"}},fill:solid("FF111C0C"),alignment:{horizontal:"center",vertical:"middle"}});
+  st(a1,{font:{name:"Arial",size:20,bold:true,color:{argb:"FFFFFFFF"}},fill:solid("FF0070C0"),alignment:{horizontal:"center",vertical:"middle"}});
   // صف العناوين
-  // الألوان المطابقة للصورة المرجعية: A اللوحة، C المعادلة، D النوع، E البنك، F الشاص.
-  // العمود B مساعد ومخفي؛ لا نلوّنه كأنه عمود بيانات.
-  const HF={A:"FF325223",C:"FF4BA75E",D:"FF4FADEA",E:"FFFFFF54",F:"FF7030A0"};
+  const HF={A:"FF325223",B:"FF4BA75E",C:"FF4FADEA",D:"FFFFFF54",E:"FF00B0F0",F:"FF7030A0"};
   Object.keys(HF).forEach(k=>{
     const c=ws.getCell(k+"2");
     const font=Object.assign({},c.font,{name:"Abadi",size:k==="D"?20:24});
-    if(k==="A"||k==="F")font.color={argb:"FFFFFFFF"};
+    if(k==="F")font.color={argb:"FFFFFFFF"};
     st(c,{fill:solid(HF[k]),font});
   });
   // صف "صل على محمد": 3 مرات جنب بعض على لون وردي غامق
@@ -492,7 +493,7 @@ function designSheet(wb){
   st(a3,{font:{name:"Calibri",size:22,bold:true,italic:true,color:{argb:"FFFFFFFF"}},fill:solid(ROSE),alignment:{horizontal:"center",vertical:"middle"}});
   try{ws.mergeCells("A3:F3")}catch(e){}
   // ألوان اللوحة لما تنور (قاعدة بسيطة لكل عمود)
-  const CM={C:"FF4BA75E",D:"FF4FADEA",E:"FFFFFF54",F:"FF7030A0"};
+  const CM={B:"FF4BA75E",C:"FF4FADEA",D:"FFFFFF54",E:"FF00B0F0",F:"FF7030A0"};
   ws.conditionalFormattings=[];
   Object.keys(CM).forEach((L,i)=>{
     ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="F"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});

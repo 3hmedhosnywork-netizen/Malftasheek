@@ -27,13 +27,15 @@ label{display:block}
 </style>
 </head>
 <body>
-<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v25</span></h1>
+<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v27</span></h1>
 
 <div class="card" id="consolidatorCard">
 <h2>٣) مجمع المحافظ (مستقل)</h2>
 <div class="mut">من واتساب: اختر مشاركة ثم اختر تطبيق «دمج محافظ اللوحات». كل مشاركة من واتساب تُضاف للمحافظ المحفوظة ولا تستبدلها. بعد إرسال كل المحافظ اضغط «تنفيذ التجميع» مرة واحدة.</div>
-<div class="mut">اضغط زر واتساب الأعمال لفتحه، ثم اختر ملف المحفظة من محادثتك واضغط مشاركة ← دمج محافظ اللوحات. كل مشاركة جديدة تُضاف للقائمة السابقة ولا تستبدلها.</div>
+<div class="mut">يمكنك إضافة المحافظ باختيار الملفات من الجهاز، أو فتح واتساب الأعمال ثم مشاركة ملف المحفظة إلى تطبيق «دمج محافظ اللوحات». كل مشاركة جديدة تُضاف للقائمة السابقة ولا تستبدلها.</div>
 <button id="openBusinessWhatsApp" type="button" style="background:#168b50">فتح واتساب الأعمال</button>
+<label class="mut" for="conFiles" style="margin-top:10px">أو اختر ملفات المحافظ من الجهاز:</label>
+<input type="file" id="conFiles" multiple accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv">
 <div id="conQueue" class="mut" style="margin:10px 0">لم تُضف محافظ بعد.</div>
 <div style="display:flex;gap:8px;flex-wrap:wrap">
 <button id="conBuild" type="button">تنفيذ التجميع</button>
@@ -545,15 +547,26 @@ if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(
   const incoming=await DB.all("inbox");
   for(const item of incoming){
    const f=item.file instanceof File?item.file:new File([item.file],item.name||"shared.xlsx");
-   const suggested=(item.name||f.name||"محفظة").replace(/\.[^.]+$/i,"");
-   const n=prompt("وصلت محفظة جديدة من واتساب. اكتب اسم المحفظة:",suggested);
-   if(n&&n.trim()){
-    await DB.add("conQueue",{file:f,name:n.trim(),addedAt:Date.now()});
-    await DB.del("inbox",item.id);
-   }else{
-    $("conStatus").textContent="الملف ما زال محفوظاً في الوارد. أعد فتح التطبيق لتسميته وإضافته للمجمع.";
+   const choice=prompt("وصلت محفظة من واتساب. اختار هتروح فين:\n1- مجمع المحافظ (المستقل)\n2- الشيت الأساسي\n3- المحافظ للتحديث\n\nاكتب رقم الاختيار:","1");
+   if(choice===null||!(["1","2","3"].includes(choice.trim()))){
+    $("conStatus").textContent="الملف ما زال محفوظاً في الوارد. افتح التطبيق مرة أخرى واختر وجهة الملف.";
     break;
    }
+   if(choice.trim()==="1"){
+    const suggested=(item.name||f.name||"محفظة").replace(/\.[^.]+$/i,"");
+    const n=prompt("اكتب اسم المحفظة لإضافتها إلى مجمع المحافظ:",suggested);
+    if(!n||!n.trim()){
+     $("conStatus").textContent="الملف ما زال محفوظاً في الوارد ولم يتم حذفه.";
+     break;
+    }
+    await DB.add("conQueue",{file:f,name:n.trim(),addedAt:Date.now()});
+    $("conStatus").textContent="تمت إضافة الملف إلى مجمع المحافظ المستقل.";
+   }else if(choice.trim()==="2"){
+    await $("mainf").onchange({target:{files:[f]}});
+   }else{
+    await $("walf").onchange({target:{files:[f]}});
+   }
+   await DB.del("inbox",item.id);
   }
   await loadConQueue();
   if(incoming.length) $("consolidatorCard").scrollIntoView({behavior:"smooth",block:"start"});
@@ -600,8 +613,6 @@ async function addConWallet(file,name){
  $("conStatus").textContent=`تم حفظ ${name} في قائمة الانتظار. ارجع لواتساب وشارك المحفظة التالية؛ الملفات السابقة ستظل محفوظة.`;
 }
 $("openBusinessWhatsApp").onclick=()=>{
- // Android intent targets WhatsApp Business specifically; the normal share-target
- // remains the route for sending a spreadsheet back into this PWA.
  const isAndroid=/Android/i.test(navigator.userAgent);
  if(isAndroid){
   window.location.href="intent://#Intent;scheme=whatsapp;package=com.whatsapp.w4b;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;end";
@@ -609,6 +620,10 @@ $("openBusinessWhatsApp").onclick=()=>{
   window.open("https://web.whatsapp.com/","_blank","noopener");
  }
 };
+$("conFiles").addEventListener("change",async e=>{
+ const fs=[...e.target.files];e.target.value="";
+ for(const f of fs){const n=prompt("اكتب اسم هذه المحفظة:",f.name.replace(/\.[^.]+$/i,""));if(n&&n.trim())await addConWallet(f,n.trim())}
+});
 $("conClear").onclick=async()=>{await DB.clear("conQueue");await loadConQueue();$("conStatus").textContent="تم مسح قائمة مجمع المحافظ."};
 function conCellValue(cell){
  let v=cell.value;

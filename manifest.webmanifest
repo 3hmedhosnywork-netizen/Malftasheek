@@ -1,7 +1,7 @@
 {
  "name": "دمج محافظ اللوحات",
  "short_name": "المحافظ",
- "start_url": "./index.html?v=26",
+ "start_url": "./index.html?v=28",
  "scope": "./",
  "display": "standalone",
  "lang": "ar",

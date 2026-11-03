@@ -32,8 +32,8 @@ label{display:block}
 <div class="card" id="consolidatorCard">
 <h2>٣) مجمع المحافظ (مستقل)</h2>
 <div class="mut">من واتساب: اختر مشاركة ثم اختر تطبيق «دمج محافظ اللوحات». كل مشاركة من واتساب تُضاف للمحافظ المحفوظة ولا تستبدلها. بعد إرسال كل المحافظ اضغط «تنفيذ التجميع» مرة واحدة.</div>
-<label class="mut">مشاركة واتساب هي الطريقة الأساسية. يمكنك أيضاً اختيار ملفات من الجهاز عند الحاجة.</label>
-<input type="file" id="conFiles" multiple accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv">
+<div class="mut">اضغط زر واتساب الأعمال لفتحه، ثم اختر ملف المحفظة من محادثتك واضغط مشاركة ← دمج محافظ اللوحات. كل مشاركة جديدة تُضاف للقائمة السابقة ولا تستبدلها.</div>
+<button id="openBusinessWhatsApp" type="button" style="background:#168b50">فتح واتساب الأعمال</button>
 <div id="conQueue" class="mut" style="margin:10px 0">لم تُضف محافظ بعد.</div>
 <div style="display:flex;gap:8px;flex-wrap:wrap">
 <button id="conBuild" type="button">تنفيذ التجميع</button>
@@ -599,10 +599,16 @@ async function addConWallet(file,name){
  await loadConQueue();
  $("conStatus").textContent=`تم حفظ ${name} في قائمة الانتظار. ارجع لواتساب وشارك المحفظة التالية؛ الملفات السابقة ستظل محفوظة.`;
 }
-$("conFiles").addEventListener("change",async e=>{
- const fs=[...e.target.files];e.target.value="";
- for(const f of fs){const n=prompt("اكتب اسم هذه المحفظة:",f.name.replace(/\.[^.]+$/i,""));if(n&&n.trim())await addConWallet(f,n.trim())}
-});
+$("openBusinessWhatsApp").onclick=()=>{
+ // Android intent targets WhatsApp Business specifically; the normal share-target
+ // remains the route for sending a spreadsheet back into this PWA.
+ const isAndroid=/Android/i.test(navigator.userAgent);
+ if(isAndroid){
+  window.location.href="intent://#Intent;scheme=whatsapp;package=com.whatsapp.w4b;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;end";
+ }else{
+  window.open("https://web.whatsapp.com/","_blank","noopener");
+ }
+};
 $("conClear").onclick=async()=>{await DB.clear("conQueue");await loadConQueue();$("conStatus").textContent="تم مسح قائمة مجمع المحافظ."};
 function conCellValue(cell){
  let v=cell.value;

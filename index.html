@@ -29,6 +29,20 @@ label{display:block}
 <body>
 <h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v23</span></h1>
 
+<div class="card" id="consolidatorCard">
+<h2>٣) مجمع المحافظ (مستقل)</h2>
+<div class="mut">ارفع المحافظ واحدة تلو الأخرى، واكتب اسم كل محفظة. لن يبدأ التجميع إلا بعد الضغط على «تنفيذ التجميع».</div>
+<label>إضافة ملفات المحافظ</label>
+<input type="file" id="conFiles" multiple accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv">
+<div id="conQueue" class="mut" style="margin:10px 0">لم تُضف محافظ بعد.</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<button id="conBuild" type="button">تنفيذ التجميع</button>
+<button id="conClear" type="button" style="background:#6b7280">مسح القائمة</button>
+</div>
+<div id="conStatus" class="mut" style="margin-top:10px"></div>
+</div>
+
+
 <div class="card">
 <h2>١) الشيت الأساسي المجمع (xlsx)</h2>
 <input type="file" id="mainf" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
@@ -273,14 +287,14 @@ function renderWallets(){
     const sel=w.heads.map((t,c)=>`<option value="${c}" ${c===w.pi?"selected":""}>${esc(t||"عمود "+(c+1))}</option>`).join("");
     const vbtn=o=>`<br><button type="button" class="vb" style="width:auto;padding:6px 12px;margin:6px 0;background:transparent;color:var(--ac);border:1px solid var(--ac)">عرض اللوحات</button><div class="mut" hidden style="word-break:break-word">${[...w.found.get(o)].map(esc).join("، ")}</div>`;
     const plain=w.mode?true:false;
-    const ow=w.owners.length?w.owners.map((o,j)=>`<div class="own">${w.mode==="add"?`<label style="display:flex;align-items:center;gap:6px;flex:none"><input type="checkbox" class="pasteDelOwner" data-w="${i}" data-j="${j}" style="width:20px;height:20px">حذف المطابق</label>`:plain?"":`<select class="op" data-w="${i}" data-j="${j}" style="width:auto;flex:none;max-width:42%;font-size:.9rem"><option value="0">بدون</option><option value="r">استبدال</option><option value="d">حذف المطابق</option></select>`}<div style="flex:1"><b>${esc(o||"(بدون اسم)")}</b>${!plain&&w.mode!=="add"&&w.owners.length>1&&j===w.owners.length-1?' <span class="er">(الأقل تطابقاً)</span>':''}<br><span class="mut">يطابق ${w.found.get(o).size} لوحة من المحفظة · لديه ${S.byOwner.get(o).length} صف في الأساسي</span>${vbtn(o)}</div></div>`).join(""):'<div class="mut">لم يتم العثور على أي لوحة في الأساسي</div>';
+    const ow=w.owners.length?w.owners.map((o,j)=>`<div class="own">${plain?"":`<select class="op" data-w="${i}" data-j="${j}" style="width:auto;flex:none;max-width:42%;font-size:.9rem"><option value="0">بدون</option><option value="r">استبدال</option><option value="d">حذف المطابق</option></select>`}<div style="flex:1"><b>${esc(o||"(بدون اسم)")}</b>${!plain&&w.owners.length>1&&j===w.owners.length-1?' <span class="er">(الأقل تطابقاً)</span>':''}<br><span class="mut">يطابق ${w.found.get(o).size} لوحة من المحفظة · لديه ${S.byOwner.get(o).length} صف في الأساسي</span>${vbtn(o)}</div></div>`).join(""):'<div class="mut">لم يتم العثور على أي لوحة في الأساسي</div>';
     const def=w.owners.length===1?w.owners[0]:"";
     let head,nameBox;
     if(w.mode==="del"){
       head='<div class="mut" style="margin-top:8px">«حذف»: اللوحات دي هتتحذف من أصحابها في الأساسي، ومش هيتضاف حاجة. المالكين اللي عندهم لوحات مطابقة:</div>';
       nameBox="";
     }else if(w.mode==="add"){
-      head='<div class="mut" style="margin-top:8px">حدد مربع «حذف المطابق» أمام أي مالك تريد حذف اللوحات الملصوقة من محفظته. وعند الإضافة لمالك موجود، سيتم تخطي اللوحات الموجودة عنده وإضافة الجديدة فقط:</div>';
+      head='<div class="mut" style="margin-top:8px">«إضافة»: اللوحات هتتضاف للمالك اللي تكتب اسمه تحت، من غير حذف أي حاجة. اللوحات دي موجودة بالفعل عند:</div>';
       nameBox=`<label class="mut" style="margin-top:8px">اسم المالك اللي هتتضاف له اللوحات (اكتب أو اختر)<input type="text" list="dl" id="on${i}" value=""></label>`;
     }else{
       head=`<div class="mut" style="margin-top:8px">${"لكل مالك اختر: «استبدال» (حذف كل لوحاته القديمة من الأساسي وإضافة المحفظة بدلها) أو «حذف المطابق» (حذف اللوحات الظاهرة له فقط وترك باقي لوحاته):"}</div>`;
@@ -319,7 +333,6 @@ $("applyBtn").onclick=async()=>{
     const nb=$("on"+i);W[i].name2=nb?nb.value.trim():"";
     if(W[i].mode!=="del"&&!W[i].name2){alert("اكتب اسم المالك للمحفظة: "+W[i].name);return}
     W[i].del=[];W[i].dm=W[i].mode==="del"?[...W[i].owners]:[];
-    if(W[i].mode==="add")document.querySelectorAll(`input.pasteDelOwner[data-w="${i}"]:checked`).forEach(c=>{const o=W[i].owners[+c.dataset.j];if(o!==W[i].name2)W[i].dm.push(o)});
     if(!W[i].mode)document.querySelectorAll(`select.op[data-w="${i}"]`).forEach(s=>{const o=W[i].owners[+s.dataset.j];if(s.value==="r")W[i].del.push(o);else if(s.value==="d")W[i].dm.push(o)});
   }
   const all=[...new Set(W.flatMap(w=>w.del))],dmAll=[...new Set(W.flatMap(w=>w.dm))];
@@ -369,13 +382,8 @@ $("applyBtn").onclick=async()=>{
   for(const w of W){
     if(w.mode==="del")continue;
     const m=mapCols(w);
-    const targetKeys=new Set((S.byOwner.get(w.name2)||[]).map(rr=>norm(ctext(ws.getRow(rr).getCell(S.pc))).key));
-    const addedKeys=new Set();
     for(const r of w.data){
       const z=norm(r[w.pi]);if(!z.key)continue;
-      // في اللصق: لا نكرر لوحة موجودة بالفعل عند المالك المستهدف، ولا نكررها مرتين من نفس اللصق.
-      if(w.mode==="add"&&(targetKeys.has(z.key)||addedKeys.has(z.key)))continue;
-      addedKeys.add(z.key);
       const plate=z.L+z.D;
       const vals=m.map(j=>{
         if(j===-2)return plate;if(j===-3)return w.name2;
@@ -458,37 +466,31 @@ function designSheet(wb){
       st(ws.getCell(r,c),Object.assign({font:{name:"Calibri",size:20,bold:true},fill:c===2?solid("FFFFFF00"):none,alignment:{horizontal:"center",vertical:"middle"}},c===2?{numFmt:";;;"}:{}));
     }
   }
-  // تسريع البحث: تحديد نطاق بيانات اللوحات الفعلي بدلاً من فحص مليون صف في العمود كله.
-  const dataSheet=wb.getWorksheet("بيانات")||wb.worksheets.find(x=>x!==ws);
-  const dataLast=Math.max(1,dataSheet?dataSheet.rowCount:1);
-  const plateRange=`بيانات!$A$1:$A$${dataLast}`;
+  // معادلات أسرع: بحث واحد لكل لوحة (عمود B المخفي) والباقي INDEX، والصفوف الفاضية بتتخطى
+  let anyFilled=false;
   const RC=S._recent||[];
   RC.forEach((e,i)=>{ws.getCell(4+i,1).value=e.p});
   for(let r=4;r<=4999;r++){
     const rc=RC[r-4];
     const av=ws.getCell(r,1).value,empty=av==null||String(av).trim()==="";
+    if(!empty&&!rc)anyFilled=true;
     const put=(c,f,res)=>{const old=c.value;c.value={formula:f,result:empty?"":(res!==undefined?res:(old&&old.result!==undefined?old.result:""))}};
-    put(ws.getCell("B"+r),`IF(A${r}="","",IFERROR(MATCH(A${r},${plateRange},0),""))`,rc?rc.n:"");
+    put(ws.getCell("B"+r),`IF(A${r}="","",IFERROR(MATCH(A${r},بيانات!A:A,0),""))`,rc?rc.n:"");
     [["C","A",0],["D","B",1],["E","C",2],["F","D",3]].forEach(([L,src,ix])=>{
-      put(ws.getCell(L+r),`IF(B${r}="","",INDEX(بيانات!$${src}$1:$${src}$${dataLast},B${r}))`,rc&&rc.v?rc.v[ix]:undefined);
+      put(ws.getCell(L+r),`IF(B${r}="","",INDEX(بيانات!${src}:${src},B${r}))`,rc&&rc.v?rc.v[ix]:undefined);
     });
   }
-  // لا نطلب إعادة حساب آلاف الخلايا عند فتح الملف؛ Excel يعيد حساب صف اللوحة عند تغييره.
-  try{wb.calcProperties=Object.assign({},wb.calcProperties,{calcId:191029,calcMode:"auto",fullCalcOnLoad:false,forceFullCalc:false})}catch(e){}
+  try{wb.calcProperties=Object.assign({},wb.calcProperties,{calcId:191029,fullCalcOnLoad:anyFilled})}catch(e){}
   // الصف الأول
   try{if(!ws.getCell("A1").isMerged)ws.mergeCells("A1:F1")}catch(e){}
   const a1=ws.getCell("A1");
   a1.value="Rasd Zaki";
-  st(a1,{font:{name:"Arial",size:20,bold:true,color:{argb:"FFFFFFFF"}},fill:solid("FF111C0C"),alignment:{horizontal:"center",vertical:"middle"}});
+  st(a1,{font:{name:"Arial",size:20,bold:true,color:{argb:"FFFFFFFF"}},fill:solid("FF0070C0"),alignment:{horizontal:"center",vertical:"middle"}});
   // صف العناوين
-  // الألوان المطابقة للصورة المرجعية: A اللوحة، C المعادلة، D النوع، E البنك، F الشاص.
-  // العمود B مساعد ومخفي؛ لا نلوّنه كأنه عمود بيانات.
-  const HF={A:"FF325223",C:"FF4BA75E",D:"FF4FADEA",E:"FFFFFF54",F:"FF7030A0"};
+  const HF={A:"FFFF0000",B:"FFFFFF00",C:"FFFFC000",D:"FF7030A0",E:"FF00B0F0",F:"FF00B050"};
   Object.keys(HF).forEach(k=>{
     const c=ws.getCell(k+"2");
-    const font=Object.assign({},c.font,{name:"Abadi",size:k==="D"?20:24});
-    if(k==="A"||k==="F")font.color={argb:"FFFFFFFF"};
-    st(c,{fill:solid(HF[k]),font});
+    st(c,{fill:solid(HF[k]),font:Object.assign({},c.font,{name:"Abadi",size:k==="D"?20:24})});
   });
   // صف "صل على محمد": 3 مرات جنب بعض على لون وردي غامق
   const ROSE="FFC2185B";
@@ -499,10 +501,10 @@ function designSheet(wb){
   st(a3,{font:{name:"Calibri",size:22,bold:true,italic:true,color:{argb:"FFFFFFFF"}},fill:solid(ROSE),alignment:{horizontal:"center",vertical:"middle"}});
   try{ws.mergeCells("A3:F3")}catch(e){}
   // ألوان اللوحة لما تنور (قاعدة بسيطة لكل عمود)
-  const CM={C:"FF4BA75E",D:"FF4FADEA",E:"FFFFFF54",F:"FF7030A0"};
+  const CM={C:"FFFFC000",D:"FF7030A0",E:"FF00B0F0",F:"FF00B050"};
   ws.conditionalFormattings=[];
   Object.keys(CM).forEach((L,i)=>{
-    ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="F"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
+    ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="D"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
   });
 }
 async function fastRestore(){
@@ -531,7 +533,7 @@ if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(
   await c.delete(k);history.replaceState(null,"",location.pathname);
   const m=document.createElement("div");
   m.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9;padding:20px";
-  m.innerHTML='<div class="card" style="max-width:420px;width:100%;margin:0"><h2>وصل ملف جديد</h2><div class="mut" id="shn"></div><button id="shM">شيت أساسي</button><button id="shW">محفظة للتحديث</button></div>';
+  m.innerHTML='<div class="card" style="max-width:420px;width:100%;margin:0"><h2>وصل ملف جديد</h2><div class="mut" id="shn"></div><button id="shM">شيت أساسي</button><button id="shW">محفظة للتحديث</button><button id="shC">إضافة إلى مجمع المحافظ</button></div>';
   document.body.appendChild(m);m.querySelector("#shn").textContent=f.name;
   m.querySelector("#shM").onclick=async()=>{m.remove();try{const dt=new DataTransfer();dt.items.add(f);$("mainf").files=dt.files}catch(e){}await $("mainf").onchange({target:{files:[f]}})};
   m.querySelector("#shW").onclick=async()=>{m.remove();
@@ -539,6 +541,7 @@ if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(
    if(!S){alert("ارفع الشيت الأساسي أولاً");return}
    try{const dt=new DataTransfer();dt.items.add(f);$("walf").files=dt.files}catch(e){}
    await $("walf").onchange({target:{files:[f]}})};
+  m.querySelector("#shC").onclick=()=>{const n=prompt("اكتب اسم المحفظة التي وصل ملفها:",f.name.replace(/\\.[^.]+$/,""));if(n&&n.trim()){addConWallet(f,n.trim());m.remove();}};
  }catch(e){}
 })();
 $("pasteBtn").onclick=()=>{
@@ -561,6 +564,129 @@ $("pasteBtn").onclick=()=>{
   W.push(w);analyze(w);renderWallets();
   $("walInfo").textContent="تمت إضافة "+data.length+" صف من اللصق";
   $("paste").value="";
+};
+
+// مجمع المحافظ: مسار مستقل لا يغيّر الشيت الأساسي أو المحافظ الحالية.
+const CON_QUEUE=[];
+function renderConQueue(){
+ const el=$("conQueue");
+ if(!CON_QUEUE.length){el.textContent="لم تُضف محافظ بعد.";return}
+ el.innerHTML=CON_QUEUE.map((x,i)=>`<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--bd);padding:6px 0"><span>${i+1}. ${esc(x.name)} — ${esc(x.file.name)}</span><button type="button" data-rmcon="${i}" style="background:#b91c1c;padding:4px 10px">حذف</button></div>`).join("");
+ el.querySelectorAll("[data-rmcon]").forEach(b=>b.onclick=()=>{CON_QUEUE.splice(+b.dataset.rmcon,1);renderConQueue()});
+}
+function addConWallet(file,name){
+ if(!file)return;
+ CON_QUEUE.push({file,name});
+ renderConQueue();
+ $("conStatus").textContent=`تمت إضافة ${name}. أضف باقي المحافظ ثم اضغط تنفيذ التجميع.`;
+}
+$("conFiles").addEventListener("change",e=>{
+ const fs=[...e.target.files];e.target.value="";
+ fs.forEach(f=>{const n=prompt("اكتب اسم هذه المحفظة:",f.name.replace(/\.[^.]+$/,""));if(n&&n.trim())addConWallet(f,n.trim())});
+});
+$("conClear").onclick=()=>{CON_QUEUE.length=0;renderConQueue();$("conStatus").textContent="تم مسح قائمة مجمع المحافظ."};
+function conCellValue(cell){
+ let v=cell.value;
+ if(v&&typeof v==="object"){
+  if(v.result!==undefined)return v.result;
+  if(Array.isArray(v.richText))return v.richText.map(x=>x.text||"").join("");
+  if(v.text!==undefined)return v.text;
+  if(v.hyperlink)return v.text||v.hyperlink;
+  if(v.formula||v.sharedFormula)return "";
+ }
+ if(v instanceof Date)return v;
+ return v==null?"":v;
+}
+function cleanConPlate(value){
+ let t=String(value==null?"":value);
+ t=t.normalize("NFD").replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g,"").replace(/\u0640/g,"");
+ t=t.replace(/[أإآٱ]/g,"ا").replace(/ى/g,"ي").replace(/ؤ/g,"و").replace(/ئ/g,"ي");
+ t=t.replace(/[٠-٩]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/[۰-۹]/g,d=>String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
+ return t.replace(/[^0-9\u0621-\u064A\u0671A-Za-z]/g,"");
+}
+async function readConFile(item){
+ const ext=item.file.name.split(".").pop().toLowerCase();
+ if(ext==="csv"||ext==="xls"){
+  const input=ext==="csv"?await item.file.text():await item.file.arrayBuffer();
+  const wb=XLSX.read(input,{type:ext==="csv"?"string":"array"});
+  const sh=wb.Sheets[wb.SheetNames[0]],rows=XLSX.utils.sheet_to_json(sh,{header:1,raw:false,defval:""});
+  return {rows,name:item.name};
+ }
+ const wb=new ExcelJS.Workbook();
+ await wb.xlsx.load(await item.file.arrayBuffer());
+ let best=null;
+ for(const ws of wb.worksheets){
+  const maxR=Math.min(ws.rowCount,30),maxC=ws.columnCount;
+  for(let r=1;r<=maxR;r++){
+   const vals=[];for(let c=1;c<=maxC;c++)vals.push(String(conCellValue(ws.getRow(r).getCell(c))||"").trim());
+   const non=vals.filter(Boolean).length,plate=vals.some(v=>/لوح|plate/i.test(v));
+   const score=non+(plate?100:0);
+   if(non>=2&&(!best||score>best.score))best={ws,r,score};
+  }
+ }
+ if(!best)throw new Error(`لم أجد صف عناوين واضحاً في ${item.file.name}`);
+ const rows=[];
+ for(let r=best.r;r<=best.ws.rowCount;r++){
+  const row=best.ws.getRow(r),a=[];
+  for(let c=1;c<=best.ws.columnCount;c++)a.push(conCellValue(row.getCell(c)));
+  rows.push(a);
+ }
+ return {rows,name:item.name};
+}
+$("conBuild").onclick=async()=>{
+ if(!CON_QUEUE.length){alert("أضف محفظة واحدة على الأقل أولاً.");return}
+ const btn=$("conBuild");btn.disabled=true;
+ $("conStatus").textContent="جاري قراءة المحافظ وتجميع بياناتها…";
+ try{
+  const sources=[];
+  for(const item of CON_QUEUE)sources.push(await readConFile(item));
+  // تحديد صف العناوين لكل مصدر، ثم بناء أعمدة موحدة مع الحفاظ على كل الحقول.
+  const allHeaders=[],headerKeys=new Map(),prepared=[];
+  for(const src of sources){
+   const rows=src.rows;
+   let hi=rows.findIndex(r=>r.filter(v=>String(v??"").trim()).length>=2);
+   if(hi<0)hi=0;
+   const heads=(rows[hi]||[]).map((v,i)=>String(v??"").trim()||`عمود ${i+1}`);
+   const data=rows.slice(hi+1).filter(r=>r.some(v=>String(v??"").trim()!==""));
+   let pi=heads.findIndex(h=>/لوح|plate/i.test(h));
+   if(pi<0){
+    let best=-1,bestScore=0;
+    for(let c=0;c<heads.length;c++){let score=0;for(const r of data.slice(0,250)){const v=cleanConPlate(r[c]);if(/[0-9]/.test(v)&&/[\u0621-\u064A]/.test(v)&&v.length>=5)score++}if(score>bestScore){bestScore=score;best=c}}
+    pi=best>=0?best:0;
+   }
+   const keys=heads.map((h,i)=>{const key=h.toLocaleLowerCase()+"__"+i;return key});
+   prepared.push({heads,data,pi,keys,owner:src.name});
+   keys.forEach((k,i)=>{if(!headerKeys.has(k)){headerKeys.set(k,allHeaders.length);allHeaders.push(heads[i])}});
+  }
+  const first=prepared[0],plateKey=first.keys[first.pi],plateIndex=headerKeys.get(plateKey);
+  const outputHeaders=[...allHeaders];outputHeaders.splice(plateIndex+1,0,"اسم المحفظة");
+  const outRows=[outputHeaders];
+  let count=0;
+  for(const src of prepared){
+   for(const row of src.data){
+    const out=Array(allHeaders.length).fill("");
+    src.keys.forEach((k,i)=>{const j=headerKeys.get(k);if(j!==undefined)out[j]=row[i]??""});
+    const pidx=headerKeys.get(src.keys[src.pi]);
+    out[pidx]=cleanConPlate(row[src.pi]);
+    out.splice(plateIndex+1,0,src.owner);
+    outRows.push(out);count++;
+   }
+  }
+  const outWb=new ExcelJS.Workbook(),ws=outWb.addWorksheet("مجمع المحافظ");
+  outRows.forEach(r=>ws.addRow(r));
+  ws.views=[{state:"frozen",ySplit:1}];
+  const blob=await outWb.xlsx.writeBuffer();
+  const defaultName="مجمع المحافظ";
+  const fileName=prompt("اكتب اسم ملف المجمع:",defaultName);
+  if(!fileName||!fileName.trim()){ $("conStatus").textContent="تم إلغاء التصدير، والقائمة ما زالت محفوظة.";return}
+  const safe=fileName.trim().replace(/[\\/:*?"<>|]/g,"-");
+  const a=document.createElement("a"),url=URL.createObjectURL(new Blob([blob],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+  const finalName=safe.toLowerCase().endsWith(".xlsx")?safe:safe+".xlsx";
+  a.href=url;a.download=finalName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);
+  $("conStatus").textContent=`تم إنشاء ملف ${finalName} بنجاح. إجمالي الصفوف المجمعة: ${count}. بعد حفظ الملف يمكنك مسح القائمة وبدء مجمع جديد.`;
+  CON_QUEUE.length=0;renderConQueue();
+ }catch(err){$("conStatus").textContent="تعذر إنشاء المجمع: "+err.message}
+ finally{btn.disabled=false}
 };
 </script>
 </body>

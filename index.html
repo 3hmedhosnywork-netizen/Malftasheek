@@ -364,12 +364,22 @@ $("applyBtn").onclick=async()=>{
   }
   S._fixed=fixed;
   const last=ws.getRow(ws.rowCount),tpl=S.heads.map((_,c)=>JSON.parse(JSON.stringify(last.getCell(c+1).style||{})));
-  let added=0;
+  let added=0,skippedDuplicates=0;
+  const existingByOwner=new Map();
+  for(let r=S.h+1;r<=ws.rowCount;r++){
+    const row=ws.getRow(r),owner=ctext(row.getCell(S.oc)),key=norm(ctext(row.getCell(S.pc))).key;
+    if(!owner||!key)continue;
+    if(!existingByOwner.has(owner))existingByOwner.set(owner,new Set());
+    existingByOwner.get(owner).add(key);
+  }
   for(const w of W){
     if(w.mode==="del")continue;
-    const m=mapCols(w);
+    const m=mapCols(w),ownerKeys=existingByOwner.get(w.name2)||new Set();
+    existingByOwner.set(w.name2,ownerKeys);
     for(const r of w.data){
       const z=norm(r[w.pi]);if(!z.key)continue;
+      if(ownerKeys.has(z.key)){skippedDuplicates++;continue;}
+      ownerKeys.add(z.key);
       const plate=z.L+z.D;
       const vals=m.map(j=>{
         if(j===-2)return plate;if(j===-3)return w.name2;
@@ -401,7 +411,7 @@ $("applyBtn").onclick=async()=>{
   try{designSheet(S.wb)}catch(e){console.error(e)}
   try{
     S.out=new Uint8Array(await S.wb.xlsx.writeBuffer());S.bytes=S.out;S.fileName="النسخة المحدثة بعد التنفيذ";
-    log("تم. حُذف "+rs.length+" صف، وأُضيف "+added+" صف.\n"+(S._verify||[]).join("\n")+(S._fixed?"\nتصحيح "+S._fixed+" لوحة إنجليزي إلى حروف عربي في الأساسي":"")+"\nراجع الملف قبل الاعتماد، خصوصاً الأعمدة التي بها معادلات.");
+    log("تم. حُذف "+rs.length+" صف، وأُضيف "+added+" صف، وتم تخطي "+skippedDuplicates+" لوحة مكررة عند نفس المالك.\n"+(S._verify||[]).join("\n")+(S._fixed?"\nتصحيح "+S._fixed+" لوحة إنجليزي إلى حروف عربي في الأساسي":"")+"\nراجع الملف قبل الاعتماد، خصوصاً الأعمدة التي بها معادلات.");
     try{await DB.set("main",S.out)}catch(e){}$("dlBtn").hidden=false;buildIndex();W=[];renderWallets();$("walf").value="";$("walInfo").textContent="";$("applyBtn").disabled=false;$("applyBox").hidden=false;log($("log").textContent+"\nالنتيجة اتعتمدت كشيت أساسي جديد. ارفع المحفظة التالية أو نزّل الملف.");
   }catch(err){log("خطأ أثناء إنشاء الملف: "+err.message)}
 };
@@ -546,7 +556,7 @@ $("pasteBtn").onclick=()=>{
   }
   data=data.map(r=>{r=r.slice();while(r.length<heads.length)r.push("");return r});
   const mode=$("pasteMode").value;
-  const w={name:(mode==="del"?"حذف لوحات ملصوقة (":"إضافة لوحات ملصوقة (")+new Date().toLocaleTimeString("ar-EG")+")",heads,data,pi,mode};
+  const w={name:(mode==="del"?"حذف لوحات ملصوقة (":"إضافة لوحات ملصوقة (")+new Date().toLocaleTimeString("ar-EG")+")",heads,data,pi,mode:mode==="add"?undefined:"del",pasteIntent:mode};
   W.push(w);analyze(w);renderWallets();
   $("walInfo").textContent="تمت إضافة "+data.length+" صف من اللصق";
   $("paste").value="";

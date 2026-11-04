@@ -232,7 +232,18 @@ $("walf").onchange=async e=>{
     for(const k in sh){if(k[0]==="!")continue;const a=XLSX.utils.decode_cell(k);if(a.r>mr)mr=a.r;if(a.c>mc)mc=a.c}
     sh["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:mr,c:mc}});
     const rows=XLSX.utils.sheet_to_json(sh,{header:1,raw:false,defval:""});
-    let h=rows.findIndex(r=>r.filter(x=>String(x).trim()).length>=2);if(h<0)h=0;
+    // اختَر صف عناوين الأعمدة الحقيقي، وتجاوز صفوف العناوين التوضيحية أعلى الشيت.
+    const headerRe=/(?:لوح|plate|رقم|نوع|اسم|مالك|owner|عميل|بنك|bank|قرار|chassis|vin|هيكل|شاسي|طراز|موديل|model|make|brand|year|سنة|مركب|سيار)/i;
+    let h=-1,bestScore=0,bestFilled=0;
+    for(let ri=0;ri<Math.min(rows.length,30);ri++){
+      const cells=(rows[ri]||[]).map(x=>String(x==null?"":x).trim()).filter(Boolean);
+      if(cells.length<2)continue;
+      const score=cells.reduce((n,x)=>n+(headerRe.test(x)?1:0),0);
+      if(score>bestScore||(score===bestScore&&score>0&&cells.length>bestFilled)){
+        bestScore=score;bestFilled=cells.length;h=ri;
+      }
+    }
+    if(h<0){h=rows.findIndex(r=>r.filter(x=>String(x).trim()).length>=2);if(h<0)h=0;}
     const heads=(rows[h]||[]).map(String);
     const data=rows.slice(h+1).filter(r=>r.some(x=>String(x).trim()));
     const cand=heads.map((t,c)=>RX_P.test(t)?c:-1).filter(c=>c>=0);

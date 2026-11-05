@@ -32,7 +32,7 @@ label{display:block}
 </style>
 </head>
 <body>
-<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v26 تجريبية</span></h1>
+<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v24</span></h1>
 
 <div class="card">
 <h2>١) الشيت الأساسي المجمع (xlsx)</h2>
@@ -237,8 +237,8 @@ $("walf").onchange=async e=>{
     for(const k in sh){if(k[0]==="!")continue;const a=XLSX.utils.decode_cell(k);if(a.r>mr)mr=a.r;if(a.c>mc)mc=a.c}
     sh["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:mr,c:mc}});
     const rows=XLSX.utils.sheet_to_json(sh,{header:1,raw:false,defval:""});
-    // ابحث عن صف عناوين حقيقي. لا تعتبر أول صف بيانات عناوين إذا كان الملف بلا رؤوس.
-    const headerRe=/(?:لوح|plate|رقم|نوع|اسم|مالك|owner|عميل|بنك|bank|قرار|chassis|vin|هيكل|شاسي|طراز|موديل|model|make|brand|year|سنة|مركب|سيار)/i;
+    // لا نفترض وجود عناوين: نختار صف العناوين فقط عند وجود كلمات عناوين واضحة.
+    const headerRe=/(?:لوحة|رقم\s*اللوحة|plate|owner|مالك|اسم\s*المالك|manufacturer|مصنع|صانع\s*المركبة|نوع\s*السيارة|نوع\s*المركبة|model|موديل|year|سنة\s*الصنع|chassis|vin|هيكل)/i;
     let h=-1,bestScore=0,bestFilled=0;
     for(let ri=0;ri<Math.min(rows.length,30);ri++){
       const cells=(rows[ri]||[]).map(x=>String(x==null?"":x).trim()).filter(Boolean);
@@ -249,36 +249,51 @@ $("walf").onchange=async e=>{
       }
     }
     const hasHeader=h>=0&&bestScore>=1;
-    const data=hasHeader?rows.slice(h+1).filter(r=>r.some(x=>String(x).trim())):rows.filter(r=>r.some(x=>String(x).trim()));
     const heads=hasHeader?(rows[h]||[]).map(String):Array.from({length:Math.max(0,...rows.map(r=>r.length))},(_,c)=>"عمود "+(c+1));
+    const data=(hasHeader?rows.slice(h+1):rows).filter(r=>r.some(x=>String(x).trim()));
     const cand=heads.map((t,c)=>RX_P.test(t)?c:-1).filter(c=>c>=0);
     const pi=pickPlateCol(heads,data,cand);
-    W.push({name:f.name,heads,data,pi,noHeader:!hasHeader});
+    W.push({name:f.name,heads,data,pi});
   }
   W.forEach(analyze);renderWallets();
   $("walInfo").textContent="تم قراءة: "+W.map(w=>w.name+" ("+w.data.length+" صف)").join("، ");
 };
 
+function normVehicleText(v){
+  return String(v==null?"":v).toLowerCase().trim().replace(/[أإآ]/g,"ا").replace(/ى/g,"ي").replace(/[ً-ٟـ]/g,"").replace(/[\s_.-]+/g," ").replace(/[^\p{L}\p{N} ]/gu,"").trim();
+}
+const MAKERS_AR=["تويوتا","هونداي","هيونداي","هوندا","نيسان","شيفروليه","شيفورليه","كيا","مازدا","متسوبيشي","ميتسوبيشي","فورد","جمس","جي ام سي","ايسوزو","سوزوكي","لكزس","مرسيدس","بي ام دبليو","ب ام دبليو","اودي","فولكس واجن","فولكسفاجن","رينو","بيجو","سيتروين","سكودا","جيلي","شانجان","ام جي","شيري","جريت وول","دودج","كرايسلر","جيب","انفينيتي","بورش","لاند روفر","جاكوار","سوبارو","دايهاتسو","فيات","اوبل","بنتلي","فولفو","لينكون","كاديلاك","رام"];
+const MAKERS_EN=["toyota","hyundai","honda","nissan","chevrolet","kia","mazda","mitsubishi","ford","gmc","isuzu","suzuki","lexus","mercedes","bmw","audi","volkswagen","vw","renault","peugeot","citroen","skoda","geely","changan","mg","chery","great wall","dodge","chrysler","jeep","infiniti","porsche","land rover","jaguar","subaru","daihatsu","fiat","opel","bentley","volvo","lincoln","cadillac","ram"];
+const MODELS_AR=["كامري","كامرى","كورولا","كرولا","يارس","افالون","راف فور","راڤ فور","هايلكس","لاندكروزر","لاند كروزر","برادو","فورتشنر","هايس","جي اكس ار","اكسنت","النترا","سوناتا","توسان","سنتافي","ازيرا","كريتا","اوبتيما","سيراتو","ريو","سبورتاج","كادينزا","بيكانتو","اكورد","سيفيك","سيتي","التيما","صني","باترول","ماكسيما","اكس تريل","نافارا","ددسن","ماليبو","كروز","اوبترا","افيو","تاهو","سوبربان","سيلفرادو","جمس يوكن","يوكن","سيرا","تاهو","اكسبلورر","تورس","فيوجن","رينجر","ايدج","اكس 5","اكس 3","الفئة الخامسة","الفئة الثالثة","سي كلاس","اي كلاس","باترول","بيك اب","بكب غمارة","بكب غمارتين","بكب","شاحنة","فورستر","امبريزا","اوتلاندر","لانسر","باجيرو","ASX"];
+const MODELS_EN=["camry","corolla","yaris","avalon","rav4","hilux","land cruiser","prado","fortuner","hiace","accent","elantra","sonata","tucson","santa fe","azera","creta","optima","cerato","rio","sportage","picanto","accord","civic","city","altima","sunny","patrol","maxima","x trail","navara","datsun","malibu","cruze","optra","aveo","tahoe","suburban","silverado","yukon","sierra","explorer","taurus","fusion","ranger","edge","forester","impreza","outlander","lancer","pajero","asx","prius","aurion","fortuner","captiva","spark","trailblazer","mustang","focus","escape","ecosport","c class","e class","3 series","5 series"];
+const MAKER_SET=new Set([...MAKERS_AR,...MAKERS_EN].map(normVehicleText));
+const MODEL_SET=new Set(MODELS_AR.concat(MODELS_EN).map(normVehicleText));
 function detect(w){
-  const H=w.heads,n=H.length,rows=w.data.slice(0,300);
+  const H=w.heads,n=H.length,rows=w.data.slice(0,Math.min(800,w.data.length));
   const frac=(c,re)=>{let k=0,t=0;rows.forEach(r=>{const v=String(r[c]==null?"":r[c]).trim();if(v){t++;if(re.test(v.replace(/\s/g,"")))k++}});return t?k/t:0};
+  const vals=c=>rows.map(r=>String(r[c]==null?"":r[c]).trim()).filter(Boolean);
+  const scoreDict=(c,set)=>{const a=vals(c);if(!a.length)return 0;let k=0;a.forEach(v=>{if(set.has(normVehicleText(v)))k++});return k/a.length};
   const YR=/^(19|20)\d\d$/;
   let ci=H.findIndex((t,c)=>c!==w.pi&&RX_C.test(t));
   if(ci<0){let b=0;for(let c=0;c<n;c++)if(c!==w.pi){const f=frac(c,/^[A-Z0-9]{17}$/i);if(f>b){b=f;ci=c}}if(b<.5)ci=-1}
-  let yi=-1,b=0;
-  for(let c=0;c<n;c++)if(c!==w.pi&&c!==ci){const f=frac(c,YR);if(f>b){b=f;yi=c}}
-  if(b<.6)yi=-1;
-  let mi=H.findIndex((t,c)=>![w.pi,ci,yi].includes(c)&&/طراز|model|موديل/i.test(t));
-  let bi=H.findIndex((t,c)=>![w.pi,ci,yi,mi].includes(c)&&/صانع|الشركة المصنعة|الشركه المصنعه|ماركة|ماركه|make|brand|manufacturer/i.test(t));
-  if(w.noHeader){
-    // في الملفات بلا عناوين: عمودان قبل اللوحة هما النوع/الموديل ثم صانع المركبة، وبعدها سنة الصنع.
-    if(w.pi>=2){mi=w.pi-2;bi=w.pi-1;}
-    if(w.pi+1<H.length){const yearFrac=frac(w.pi+1,/^(19|20)\d\d$/);if(yearFrac>=.6)yi=w.pi+1;}
-  }else{
-    if(mi<0)mi=H.findIndex((t,c)=>![w.pi,ci,yi].includes(c)&&/نوع\s*(السيارة|المركبة)?|vehicle\s*type|car\s*type/i.test(t));
-    if(bi<0&&mi>0&&![w.pi,ci,yi].includes(mi-1))bi=mi-1;
+  let yi=H.findIndex((t,c)=>c!==w.pi&&/year|سنة|موديل\s*الصنع/i.test(t));
+  if(yi<0){let b=0;for(let c=0;c<n;c++)if(c!==w.pi&&c!==ci){const f=frac(c,YR);if(f>b){b=f;yi=c}}if(b<.5)yi=-1}
+  let makei=H.findIndex((t,c)=>c!==w.pi&&c!==ci&&c!==yi&&/manufacturer|make|brand|مصنع|صانع|الشركة|الماركة/i.test(t));
+  let bi=H.findIndex((t,c)=>![w.pi,ci,yi,makei].includes(c)&&/model|type|نوع|طراز|موديل|vehicle|car/i.test(t));
+  if(makei<0||bi<0){let bestMake={c:-1,s:0},bestModel={c:-1,s:0};for(let c=0;c<n;c++)if(![w.pi,ci,yi].includes(c)){
+    const ms=scoreDict(c,MAKER_SET),ts=scoreDict(c,MODEL_SET);
+    if(ms>bestMake.s)bestMake={c,s:ms};if(ts>bestModel.s)bestModel={c,s:ts};
   }
-  w.ci=ci;w.yi=yi;w.mi=mi;w.bi=bi;
+    if(makei<0&&bestMake.s>=.12)makei=bestMake.c;
+    if(bi<0&&bestModel.s>=.12)bi=bestModel.c;
+  }
+  // عند وجود سنة ومصنع ونوع بلا عناوين نعتمد التوزيع حسب محتوى الأعمدة، لا حسب موضعها.
+  w.ci=ci;w.yi=yi;w.makei=makei;w.bi=bi;w.mi=-1;
+}
+function vehicleTypeValue(w,r){
+  const indexes=[w.makei,w.bi,w.yi];
+  return indexes.map(x=>x>=0?String(r[x]==null?"":r[x]).trim():"")
+    .filter(v=>v&&!/^(بدون|لا\s*يوجد|غير\s*(موجود|محدد)|-+|—|n\/?a|null|none)$/i.test(v)).join(" / ");
 }
 function analyze(w){
   w.found=new Map();w.nf=0;
@@ -332,9 +347,7 @@ function mapCols(w){
     const h=nh(H);let j=-1;
     if(c+1===S.pc)j=-2;else if(c+1===S.oc)j=-3;
     else if(RX_C.test(H)&&w.ci>=0)j=-4;
-    else if(/صانع|الشركةالمصنعة|ماركة|ماركه|manufacturer|make|brand/.test(h)&&w.bi>=0)j=-6;
-    else if(/^(الموديل|موديل|سنةالصنع|سنةالموديل|year|modelyear)$/.test(h)&&w.yi>=0)j=-7;
-    else if(/^(ال)?نوع(السيارة|المركبة)?$/.test(h)&&(w.bi>=0||w.mi>=0||w.yi>=0))j=-5;
+    else if(/^(ال)?نوع(السيارة|المركبة)?$/.test(h)&&(w.makei>=0||w.bi>=0||w.mi>=0||w.yi>=0))j=-5;
     else{
       if(h)j=wh.findIndex(x=>x&&x===h);
       if(j<0&&h)j=wh.findIndex(x=>x&&(x.includes(h)||h.includes(x)));
@@ -415,7 +428,7 @@ $("applyBtn").onclick=async()=>{
     for(const r of w.data){
       const z=norm(r[w.pi]);if(!z.key)continue;
       if(ownerKeys.has(z.key)){
-        const suppliedType=w.isPasted&&w.bi>=0?String(r[w.bi]==null?"":r[w.bi]).trim():"";
+        const suppliedType=w.isPasted?(w.bi>=0?String(r[w.bi]==null?"":r[w.bi]).trim():""):vehicleTypeValue(w,r);
         if(suppliedType&&typeDest>0)(ownerRows.get(z.key)||[]).forEach(rr=>{ws.getRow(rr).getCell(typeDest).value=suppliedType});
         skippedDuplicates++;continue;
       }
@@ -424,9 +437,7 @@ $("applyBtn").onclick=async()=>{
       const vals=m.map(j=>{
         if(j===-2)return plate;if(j===-3)return w.name2;
         if(j===-4)return String(r[w.ci]==null?"":r[w.ci]).replace(/\s/g,"").toUpperCase();
-        if(j===-5)return w.mi>=0?String(r[w.mi]==null?"":r[w.mi]).trim():[w.bi,w.yi].map(x=>x>=0?String(r[x]==null?"":r[x]).trim():"").filter(Boolean).join(" / ");
-        if(j===-6)return w.bi>=0?String(r[w.bi]==null?"":r[w.bi]).trim():"";
-        if(j===-7)return w.yi>=0?String(r[w.yi]==null?"":r[w.yi]).trim():"";
+        if(j===-5)return vehicleTypeValue(w,r);
         if(j<0)return "";
         const v=String(r[j]).trim();
         return /^-?\d{1,12}(\.\d+)?$/.test(v)?Number(v):v;

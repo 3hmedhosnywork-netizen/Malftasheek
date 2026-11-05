@@ -29,10 +29,14 @@ button:disabled{opacity:.5}
 input.paste-type{width:100%;min-width:0;margin:0;padding:5px 7px;font-size:.82rem;border-radius:6px}
 label{display:block}
 #log{white-space:pre-wrap;font-size:.92rem}
+.feature-result{white-space:pre-wrap;font-size:.9rem;margin-top:8px;max-height:260px;overflow:auto}
+.feature-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.feature-actions button{margin-top:6px}
+#previewPanel{border:1px solid var(--ac);border-radius:10px;padding:10px;margin-top:10px}
 </style>
 </head>
 <body>
-<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v24</span></h1>
+<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v26 تجريبية</span></h1>
 
 <div class="card">
 <h2>١) الشيت الأساسي المجمع (xlsx)</h2>
@@ -41,6 +45,7 @@ label{display:block}
 
 <button id="saveBtn" type="button" style="background:transparent;color:var(--ac);border:1px solid var(--ac)">📤 مشاركة آخر شيت</button>
 <button id="restoreBtn" hidden>استرجاع آخر شيت محفوظ</button>
+<div class="feature-actions"><button id="backupBtn" type="button" style="background:#0f766e">💾 تنزيل نسخة احتياطية</button><button id="backupLoadBtn" type="button" style="background:#0f766e">استعادة نسخة احتياطية</button></div><input id="backupFile" type="file" accept=".xlsx" hidden>
 <div id="cols" hidden>
 <label class="mut">عمود اللوحة<select id="pcol"></select></label>
 <label class="mut">عمود المالك<select id="ocol"></select></label>
@@ -58,11 +63,15 @@ label{display:block}
 <textarea id="paste" rows="5" placeholder="الصق اللوحات هنا، لوحة في كل سطر. ولو نسخت جدول من إكسل هيتعرف على الأعمدة تلقائياً" style="width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font-size:1rem"></textarea>
 <label class="mut">الإجراء بعد اللصق<select id="pasteMode"><option value="add">إضافة اللوحات لمالك معيّن</option><option value="del">حذف اللوحات من أصحابها</option></select></label>
 <button id="pasteBtn">تجهيز اللوحات</button></div>
+<div class="card"><h2>🔎 البحث الشامل عن لوحة</h2><input id="plateSearch" type="text" placeholder="اكتب رقم اللوحة أو حروفها وأرقامها"><button id="searchBtn" type="button">بحث عن اللوحة</button><div id="searchResult" class="feature-result"></div></div>
+<div class="card"><h2>🧹 كشف التكرارات والتعارضات</h2><button id="scanBtn" type="button">فحص الشيت الأساسي والمحافظ</button><div id="scanResult" class="feature-result"></div></div>
+<div class="card"><h2>📋 سجل العمليات والتقارير</h2><div class="feature-actions"><button id="historyBtn" type="button">عرض سجل العمليات</button><button id="reportBtn" type="button">تصدير تقرير Excel</button></div><div id="historyResult" class="feature-result"></div></div>
 <div id="wallets"></div>
 <datalist id="dl"></datalist>
 
 <div class="card" id="applyBox" hidden>
-<button id="applyBtn">٣) تنفيذ</button>
+<button id="applyBtn">٣) معاينة التغييرات قبل التنفيذ</button><div id="previewPanel" hidden><b>معاينة العملية</b><div id="previewText" class="feature-result"></div><button id="confirmApplyBtn" type="button" style="background:#15803d">تأكيد التنفيذ الآن</button><button id="cancelPreviewBtn" type="button" style="background:#64748b">رجوع للتعديل</button></div>
+<button id="undoBtn" type="button" hidden style="background:#b45309">↶ تراجع عن آخر عملية</button>
 <div id="log"></div>
 <button id="dlBtn" hidden>📤 مشاركة الملف المحدث</button>
 </div>
@@ -336,7 +345,7 @@ function mapCols(w){
   return m;
 }
 
-$("applyBtn").onclick=async()=>{
+async function applyChanges(){
   for(let i=0;i<W.length;i++){
     const nb=$("on"+i);W[i].name2=nb?nb.value.trim():"";
     if(W[i].mode!=="del"&&!W[i].name2){alert("اكتب اسم المالك للمحفظة: "+W[i].name);return}
@@ -349,6 +358,8 @@ $("applyBtn").onclick=async()=>{
   $("applyBtn").disabled=true;log("جاري التنفيذ…");
   await new Promise(r=>setTimeout(r,50));
   if(!S.wb){log("جاري تجهيز الشيت الأساسي… قد يستغرق دقيقة");await new Promise(r=>setTimeout(r,30));const wb=new ExcelJS.Workbook();await wb.xlsx.load(S.bytes);S.wb=wb;S.ws=wb.getWorksheet(S.sheetName)||wb.worksheets[0]}
+  // نسخة رجوع واحدة: تحفظ آخر شيت سليم قبل تنفيذ العملية الحالية.
+  try{await DB.set("undo",new Uint8Array(S.bytes));}catch(e){log("تعذر حفظ نسخة التراجع: "+e.message);$("applyBtn").disabled=false;return}
   const ws=S.ws,dels=new Set();
   all.forEach(o=>(S.byOwner.get(o)||[]).forEach(r=>dels.add(r)));
   W.forEach(w=>w.dm.forEach(o=>{const ks=w.found.get(o);(S.byOwner.get(o)||[]).forEach(r=>{if(ks&&ks.has(norm(ctext(ws.getRow(r).getCell(S.pc))).key))dels.add(r)})}));
@@ -443,10 +454,45 @@ $("applyBtn").onclick=async()=>{
   try{designSheet(S.wb)}catch(e){console.error(e)}
   try{
     S.out=new Uint8Array(await S.wb.xlsx.writeBuffer());S.bytes=S.out;S.fileName="النسخة المحدثة بعد التنفيذ";
+    try{await addHistory({at:nowLabel(),type:"تحديث محفظة",added,deleted:rs.length,duplicates:skippedDuplicates,details:W.map(w=>w.name+" → "+(w.name2||"حذف فقط")).join("؛ ")})}catch(e){console.warn("تعذر حفظ سجل العملية",e)}
     log("تم. حُذف "+rs.length+" صف، وأُضيف "+added+" صف، وتم تخطي "+skippedDuplicates+" لوحة مكررة عند نفس المالك.\n"+(S._verify||[]).join("\n")+(S._fixed?"\nتصحيح "+S._fixed+" لوحة إنجليزي إلى حروف عربي في الأساسي":"")+"\nراجع الملف قبل الاعتماد، خصوصاً الأعمدة التي بها معادلات.");
-    try{await DB.set("main",S.out)}catch(e){}$("dlBtn").hidden=false;buildIndex();W=[];renderWallets();$("walf").value="";$("walInfo").textContent="";$("applyBtn").disabled=false;$("applyBox").hidden=false;log($("log").textContent+"\nالنتيجة اتعتمدت كشيت أساسي جديد. ارفع المحفظة التالية أو نزّل الملف.");
+    try{await DB.set("main",S.out);$("undoBtn").hidden=false;}catch(e){log($("log").textContent+"\nتحذير: تعذر حفظ النسخة أو سجل التراجع محلياً.")}$("dlBtn").hidden=false;buildIndex();W=[];renderWallets();$("walf").value="";$("walInfo").textContent="";$("applyBtn").disabled=false;$("applyBox").hidden=false;log($("log").textContent+"\nالنتيجة اتعتمدت كشيت أساسي جديد. ارفع المحفظة التالية أو نزّل الملف.");
   }catch(err){log("خطأ أثناء إنشاء الملف: "+err.message)}
+}
+
+// أدوات النسخة التجريبية
+const nowLabel=()=>new Date().toLocaleString("ar-EG");
+async function getHistory(){return (await DB.get("history"))||[]}
+async function addHistory(item){const h=await getHistory();h.unshift(item);await DB.set("history",h.slice(0,200));}
+function previewSummary(){let add=0,delOwners=new Set(),matchDel=0,dup=0,invalid=0,conflicts=0;W.forEach(w=>{if(w.mode==="del")(w.dm||[]).forEach(o=>delOwners.add(o));else add+=w.data.length;const seen=new Set();w.data.forEach(r=>{const k=norm(r[w.pi]).key;if(!k){invalid++;return}if(seen.has(k))dup++;seen.add(k);const owners=S.idx.get(k);if(owners&&owners.size>1)conflicts++});(w.dm||[]).forEach(o=>matchDel+=(w.found.get(o)||new Set()).size)});const replaced=[...new Set(W.flatMap(w=>w.del||[]))];return `عدد المحافظ: ${W.length}\nصفوف الإضافة: ${add}\nملاك سيتم استبدال بياناتهم بالكامل: ${replaced.join("، ")||"لا يوجد"}\nملاك سيتم حذف المطابق منهم فقط: ${[...delOwners].join("، ")||"لا يوجد"}\nاللوحات المحددة للحذف تقريباً: ${matchDel}\nتكرارات داخل المحافظ: ${dup}\nلوحات مرتبطة بأكثر من مالك: ${conflicts}\nصفوف بلا رقم لوحة صالح: ${invalid}\n\nراجع الاختيارات قبل التأكيد.`}
+$("applyBtn").onclick=()=>{if(!S||!W.length){alert("حمّل الشيت الأساسي ومحفظة واحدة على الأقل");return}for(let i=0;i<W.length;i++){const nb=$("on"+i);W[i].name2=nb?nb.value.trim():"";if(W[i].mode!=="del"&&!W[i].name2){alert("اكتب اسم المالك للمحفظة: "+W[i].name);return}W[i].del=[];W[i].dm=[];if(W[i].mode==="del")document.querySelectorAll(`input.del-owner-check[data-w="${i}"]:checked`).forEach(c=>W[i].dm.push(W[i].owners[+c.dataset.j]));else if(!W[i].mode)document.querySelectorAll(`select.op[data-w="${i}"]`).forEach(c=>{const o=W[i].owners[+c.dataset.j];if(c.value==="r")W[i].del.push(o);else if(c.value==="d")W[i].dm.push(o)})}$("previewText").textContent=previewSummary();$("previewPanel").hidden=false};
+$("cancelPreviewBtn").onclick=()=>$("previewPanel").hidden=true;
+$("confirmApplyBtn").onclick=async()=>{$("previewPanel").hidden=true;await applyChanges()};
+$("searchBtn").onclick=()=>{if(!S){$("searchResult").textContent="حمّل الشيت الأساسي أولاً";return}const z=norm($("plateSearch").value),owners=S.idx.get(z.key);if(!z.key){$("searchResult").textContent="اكتب رقم لوحة صحيحاً";return}if(!owners){$("searchResult").textContent="لم يتم العثور على اللوحة: "+z.L+z.D;return}$("searchResult").textContent="اللوحة: "+z.L+z.D+"\nعدد الملاك: "+owners.size+"\n"+[...owners].map(o=>"• "+(o||"بدون اسم")+" — "+(S.byOwner.get(o)||[]).length+" صف إجمالي").join("\n")};
+$("plateSearch").addEventListener("keydown",e=>{if(e.key==="Enter")$("searchBtn").click()});
+$("scanBtn").onclick=()=>{
+ if(!S){$("scanResult").textContent="حمّل الشيت الأساسي أولاً";return}
+ const cross=[],baseDup=[],walletDup=[],missingPlate=[],missingOwner=[],walletMissing=[];
+ const baseSeen=new Map();
+ for(let r=S.h+1;r<=S.ws.rowCount;r++){
+  const row=S.ws.getRow(r),p=ctext(row.getCell(S.pc)),o=ctext(row.getCell(S.oc)),k=norm(p).key;
+  if(!p){if(o)missingPlate.push("صف "+r+" — "+o);continue}
+  if(!o)missingOwner.push("صف "+r+" — "+p);
+  if(k){if(!baseSeen.has(k))baseSeen.set(k,[]);baseSeen.get(k).push({r,o})}
+ }
+ baseSeen.forEach((arr,k)=>{
+  if(arr.length>1)baseDup.push(k+" — الصفوف: "+arr.map(x=>x.r).join(", "));
+  const owners=[...new Set(arr.map(x=>x.o||"بدون اسم"))];if(owners.length>1)cross.push(k+" ← "+owners.join(" / "));
+ });
+ W.forEach(w=>{const seen=new Map();w.data.forEach((r,i)=>{const k=norm(r[w.pi]).key,o=w.name2||"غير محدد";if(!k){walletMissing.push(w.name+" — صف محفظة "+(i+1)+" بلا لوحة");return}if(!seen.has(k))seen.set(k,[]);seen.get(k).push(i+1)});seen.forEach((rows,k)=>{if(rows.length>1)walletDup.push(k+" داخل "+w.name+" — الصفوف: "+rows.join(", "))})});
+ const sections=["لوحات مكررة داخل الشيت الأساسي: "+baseDup.length,...baseDup.slice(0,60),"\nلوحات مرتبطة بأكثر من مالك: "+cross.length,...cross.slice(0,60),"\nتكرارات داخل المحافظ المرفوعة: "+walletDup.length,...walletDup.slice(0,60),"\nصفوف في الأساسي بلا رقم لوحة: "+missingPlate.length,...missingPlate.slice(0,40),"\nصفوف في الأساسي بلا اسم مالك: "+missingOwner.length,...missingOwner.slice(0,40),"\nصفوف محافظ بلا رقم لوحة: "+walletMissing.length,...walletMissing.slice(0,40)];
+ $("scanResult").textContent=sections.join("\n");
 };
+$("historyBtn").onclick=async()=>{const h=await getHistory();$("historyResult").textContent=h.length?h.map(x=>`${x.at} | ${x.type} | إضافة: ${x.added||0} | حذف: ${x.deleted||0} | مكرر: ${x.duplicates||0}\n${x.details||""}`).join("\n\n"):"لا يوجد سجل عمليات حتى الآن"};
+$("reportBtn").onclick=async()=>{const h=await getHistory(),wb=new ExcelJS.Workbook(),ws=wb.addWorksheet("تقرير العمليات");ws.addRow(["التاريخ والوقت","العملية","عدد الإضافة","عدد الحذف","المكرر","التفاصيل"]);h.forEach(x=>ws.addRow([x.at,x.type,x.added||0,x.deleted||0,x.duplicates||0,x.details||""]));ws.columns=[{width:24},{width:18},{width:14},{width:14},{width:12},{width:70}];saveFile(new Uint8Array(await wb.xlsx.writeBuffer()))};
+$("backupBtn").onclick=async()=>{const b=await DB.get("main")||(S&&S.bytes);if(!b){alert("لا توجد بيانات محفوظة");return}saveFile(b instanceof Uint8Array?b:new Uint8Array(b))};
+$("backupLoadBtn").onclick=()=>$ ("backupFile").click();
+$("backupFile").onchange=async e=>{const f=e.target.files[0];if(!f)return;if(!confirm("استعادة النسخة ستستبدل الشيت الأساسي الحالي. متابعة؟"))return;try{const bytes=new Uint8Array(await f.arrayBuffer()),wb=new ExcelJS.Workbook();await wb.xlsx.load(bytes);const ws=wb.worksheets[0];if(!ws)throw new Error("الملف لا يحتوي ورقة عمل");let h=1,heads=[],pi=-1,oi=-1,best=-1;for(let rr=1;rr<=Math.min(30,ws.rowCount);rr++){const hh=[];for(let c=1;c<=ws.columnCount;c++)hh.push(ctext(ws.getRow(rr).getCell(c)));const pp=hh.findIndex(x=>RX_P.test(x)),oo=hh.findIndex(x=>RX_O.test(x)),score=(pp>=0?20:0)+(oo>=0?10:0)+hh.filter(Boolean).length;if(pp>=0&&oo>=0&&score>best){best=score;h=rr;heads=hh;pi=pp;oi=oo}}if(pi<0||oi<0)throw new Error("لم يتم التعرف على عمودي اللوحة والمالك تلقائياً");S={wb,ws,h,heads,sheetName:ws.name,bytes,fileName:f.name};$("pcol").innerHTML=heads.map((x,i)=>`<option value="${i+1}">${esc(x||"عمود "+(i+1))}</option>`).join("");$("ocol").innerHTML=$("pcol").innerHTML;$("pcol").value=pi+1;$("ocol").value=oi+1;$("cols").hidden=true;buildIndex();await DB.set("main",bytes);try{await addHistory({at:nowLabel(),type:"استعادة نسخة احتياطية",details:"تم استبدال الشيت الأساسي بالنسخة: "+f.name})}catch(e){}alert("تم استرجاع النسخة الاحتياطية") }catch(err){alert("تعذرت الاستعادة: "+err.message)}e.target.value=""};
 
 const XMIME="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 function saveFile(bytes){
@@ -475,6 +521,17 @@ $("saveBtn").onclick=async()=>{
 const DB={open(){return new Promise((res,rej)=>{const q=indexedDB.open("wm",1);q.onupgradeneeded=()=>q.result.createObjectStore("f");q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})},
 async set(k,v){const d=await this.open();return new Promise((res,rej)=>{const t=d.transaction("f","readwrite");t.objectStore("f").put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})},
 async get(k){const d=await this.open();return new Promise((res,rej)=>{const q=d.transaction("f").objectStore("f").get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}};
+$("undoBtn").onclick=async()=>{
+  if(!confirm("استرجاع الشيت السابق للعملية الأخيرة؟ سيتم إلغاء آخر إضافة/حذف/تعديل تم تنفيذه فقط."))return;
+  $("undoBtn").disabled=true;
+  try{const b=await DB.get("undo");if(!b)throw new Error("لا توجد نسخة تراجع محفوظة");
+    const bytes=b instanceof Uint8Array?b:new Uint8Array(b),wb=new ExcelJS.Workbook();await wb.xlsx.load(bytes);
+    S.wb=wb;S.ws=wb.getWorksheet(S.sheetName)||wb.worksheets[0];S.bytes=bytes;S.out=null;S.fileName="الشيت بعد التراجع عن آخر عملية";
+    await DB.set("main",bytes);const db=await DB.open();await new Promise((res,rej)=>{const tx=db.transaction("f","readwrite");tx.objectStore("f").delete("undo");tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});
+    try{await addHistory({at:nowLabel(),type:"تراجع عن آخر عملية",details:"استعادة نسخة الشيت السابقة"})}catch(e){}buildIndex();$("dlBtn").hidden=true;$("undoBtn").hidden=true;log("تم التراجع بنجاح. رجع الشيت للحالة السابقة لآخر عملية.");
+  }catch(e){alert("تعذر التراجع: "+e.message)}finally{$("undoBtn").disabled=false}
+};
+(async()=>{try{if(await DB.get("undo"))$("undoBtn").hidden=false}catch(e){}})();
 function designSheet(wb){
   const ws=wb.worksheets[0];
   if(!ws||ws===S.ws)return;

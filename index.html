@@ -22,6 +22,11 @@ button:disabled{opacity:.5}
 .ok{color:var(--ok)}.er{color:var(--er)}
 .own{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--bd)}
 .own input{width:22px;height:22px;margin-top:3px;flex:none}
+.paste-plate-list{max-height:260px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;margin:8px 0;background:var(--bg)}
+.paste-plate-row{display:grid;grid-template-columns:minmax(88px,.8fr) minmax(0,1.2fr);gap:7px;align-items:center;padding:4px 7px;border-bottom:1px solid var(--bd);font-size:.84rem}
+.paste-plate-row:last-child{border-bottom:0}
+.paste-plate-number{font-weight:600;overflow-wrap:anywhere}
+input.paste-type{width:100%;min-width:0;margin:0;padding:5px 7px;font-size:.82rem;border-radius:6px}
 label{display:block}
 #log{white-space:pre-wrap;font-size:.92rem}
 </style>
@@ -284,11 +289,14 @@ function renderWallets(){
     const sel=w.heads.map((t,c)=>`<option value="${c}" ${c===w.pi?"selected":""}>${esc(t||"عمود "+(c+1))}</option>`).join("");
     const vbtn=o=>`<br><button type="button" class="vb" style="width:auto;padding:6px 12px;margin:6px 0;background:transparent;color:var(--ac);border:1px solid var(--ac)">عرض اللوحات</button><div class="mut" hidden style="word-break:break-word">${[...w.found.get(o)].map(esc).join("، ")}</div>`;
     const plain=w.mode?true:false;
-    const ow=w.owners.length?w.owners.map((o,j)=>`<div class="own">${plain?"":`<select class="op" data-w="${i}" data-j="${j}" style="width:auto;flex:none;max-width:42%;font-size:.9rem"><option value="0">بدون</option><option value="r">استبدال</option><option value="d">حذف المطابق</option></select>`}<div style="flex:1"><b>${esc(o||"(بدون اسم)")}</b>${!plain&&w.owners.length>1&&j===w.owners.length-1?' <span class="er">(الأقل تطابقاً)</span>':''}<br><span class="mut">يطابق ${w.found.get(o).size} لوحة من المحفظة · لديه ${S.byOwner.get(o).length} صف في الأساسي</span>${vbtn(o)}</div></div>`).join(""):'<div class="mut">لم يتم العثور على أي لوحة في الأساسي</div>';
+    const ow=w.owners.length?w.owners.map((o,j)=>{
+      const control=w.mode==="del"?`<input type="checkbox" class="del-owner-check" data-w="${i}" data-j="${j}" aria-label="حذف اللوحات من ${esc(o)}" ${w.selectedOwners&&w.selectedOwners.has(o)?"checked":""}>`:plain?"":`<select class="op" data-w="${i}" data-j="${j}" style="width:auto;flex:none;max-width:42%;font-size:.9rem"><option value="0">بدون</option><option value="r">استبدال</option><option value="d">حذف المطابق</option></select>`;
+      return `<div class="own">${control}<div style="flex:1"><b>${esc(o||"(بدون اسم)")}</b>${!plain&&w.owners.length>1&&j===w.owners.length-1?' <span class="er">(الأقل تطابقاً)</span>':''}<br><span class="mut">يطابق ${w.found.get(o).size} لوحة من المحفظة · لديه ${S.byOwner.get(o).length} صف في الأساسي</span>${vbtn(o)}</div></div>`;
+    }).join(""):'<div class="mut">لم يتم العثور على أي لوحة في الأساسي</div>';
     const def=w.owners.length===1?w.owners[0]:"";
     let head,nameBox;
     if(w.mode==="del"){
-      head='<div class="mut" style="margin-top:8px">«حذف»: اللوحات دي هتتحذف من أصحابها في الأساسي، ومش هيتضاف حاجة. المالكين اللي عندهم لوحات مطابقة:</div>';
+      head='<div class="mut" style="margin-top:8px">«حذف»: حدّد أمام كل مالك تريد حذف اللوحات المطابقة منه فقط. المالك غير المحدد ستظل لوحاته كما هي، ومش هيتضاف أي شيء:</div>';
       nameBox="";
     }else if(w.mode==="add"){
       head='<div class="mut" style="margin-top:8px">«إضافة»: اللوحات هتتضاف للمالك اللي تكتب اسمه تحت، من غير حذف أي حاجة. اللوحات دي موجودة بالفعل عند:</div>';
@@ -298,13 +306,16 @@ function renderWallets(){
       nameBox=`<label class="mut" style="margin-top:8px">اسم المالك للوحات الجديدة (اكتب أو اختر)<input type="text" list="dl" id="on${i}" value="${esc(def)}"></label>`;
     }
     const cols=w.mode==="del"?"":`<div class="mut">${[["النوع",w.bi],["الطراز",w.mi],["الموديل",w.yi],["الهيكل",w.ci]].map(([a,c])=>a+": "+(c>=0?esc(w.heads[c]||"عمود "+(c+1)):"غير موجود")).join(" · ")}</div>`;
+    const pasteList=w.isPasted&&w.mode!=="del"&&w.bi>=0?`<div class="mut" style="margin-top:8px">نوع السيارة أمام كل لوحة (اتركه فارغاً لو مش عايز تغيّر النوع):</div><div class="paste-plate-list"><div class="paste-plate-row" style="position:sticky;top:0;background:var(--card);font-weight:700"><span>اللوحة</span><span>نوع السيارة</span></div>${w.data.map((r,k)=>{const z=norm(r[w.pi]);const plate=z.key?z.L+z.D:String(r[w.pi]||"");return `<div class="paste-plate-row"><span class="paste-plate-number">${esc(plate)}</span><input type="text" class="paste-type" data-w="${i}" data-row="${k}" value="${esc(r[w.bi]||"")}" placeholder="النوع والموديل"></div>`}).join("")}</div>`:"";
     return `<div class="card"><h2>${esc(w.name)}</h2>
 <label class="mut">عمود اللوحة في المحفظة<select data-w="${i}" class="wpc">${sel}</select></label>
 <div>${w.data.length} صف · <span class="ok">موجود: ${w.data.length-w.nf}</span> · <span class="er">غير موجود: ${w.nf}</span></div>
-${cols}${head}${ow}${nameBox}</div>`;
+${cols}${head}${pasteList}${ow}${nameBox}</div>`;
   }).join("");
   document.querySelectorAll(".wpc").forEach(s=>s.onchange=()=>{const w=W[+s.dataset.w];w.pi=+s.value;analyze(w);renderWallets()});
   document.querySelectorAll(".vb").forEach(b=>b.onclick=()=>{const d=b.nextElementSibling;d.hidden=!d.hidden;b.textContent=d.hidden?"عرض اللوحات":"إخفاء اللوحات"});
+  document.querySelectorAll(".del-owner-check").forEach(c=>c.onchange=()=>{const w=W[+c.dataset.w],o=w.owners[+c.dataset.j];if(!w.selectedOwners)w.selectedOwners=new Set();if(c.checked)w.selectedOwners.add(o);else w.selectedOwners.delete(o)});
+  document.querySelectorAll(".paste-type").forEach(inp=>inp.oninput=()=>{const w=W[+inp.dataset.w];w.data[+inp.dataset.row][w.bi]=inp.value});
   $("applyBox").hidden=!W.length;
 }
 
@@ -314,7 +325,7 @@ function mapCols(w){
     const h=nh(H);let j=-1;
     if(c+1===S.pc)j=-2;else if(c+1===S.oc)j=-3;
     else if(RX_C.test(H)&&w.ci>=0)j=-4;
-    else if(/^(ال)?نوع$/.test(H)&&(w.bi>=0||w.mi>=0||w.yi>=0))j=-5;
+    else if(/^(ال)?نوع(السيارة|المركبة)?$/.test(h)&&(w.bi>=0||w.mi>=0||w.yi>=0))j=-5;
     else{
       if(h)j=wh.findIndex(x=>x&&x===h);
       if(j<0&&h)j=wh.findIndex(x=>x&&(x.includes(h)||h.includes(x)));
@@ -329,11 +340,12 @@ $("applyBtn").onclick=async()=>{
   for(let i=0;i<W.length;i++){
     const nb=$("on"+i);W[i].name2=nb?nb.value.trim():"";
     if(W[i].mode!=="del"&&!W[i].name2){alert("اكتب اسم المالك للمحفظة: "+W[i].name);return}
-    W[i].del=[];W[i].dm=W[i].mode==="del"?[...W[i].owners]:[];
-    if(!W[i].mode)document.querySelectorAll(`select.op[data-w="${i}"]`).forEach(s=>{const o=W[i].owners[+s.dataset.j];if(s.value==="r")W[i].del.push(o);else if(s.value==="d")W[i].dm.push(o)});
+    W[i].del=[];W[i].dm=[];
+    if(W[i].mode==="del")document.querySelectorAll(`input.del-owner-check[data-w="${i}"]:checked`).forEach(c=>W[i].dm.push(W[i].owners[+c.dataset.j]));
+    else if(!W[i].mode)document.querySelectorAll(`select.op[data-w="${i}"]`).forEach(s=>{const o=W[i].owners[+s.dataset.j];if(s.value==="r")W[i].del.push(o);else if(s.value==="d")W[i].dm.push(o)});
   }
   const all=[...new Set(W.flatMap(w=>w.del))],dmAll=[...new Set(W.flatMap(w=>w.dm))];
-  if(!confirm("استبدال (حذف كل الصفوف): "+(all.length?all.join("، "):"لا أحد")+"\nحذف اللوحات المطابقة فقط من: "+(dmAll.length?dmAll.join("، "):"لا أحد")+"\n"+(W.filter(w=>w.mode!=="del").map(w=>"إضافة "+w.data.length+" لوحة للمالك: "+w.name2).join("\n")||"بدون إضافة")+"\nمتابعة؟"))return;
+  if(!confirm("استبدال (حذف كل الصفوف): "+(all.length?all.join("، "):"لا أحد")+"\nحذف اللوحات المطابقة فقط من الملاك المحددين: "+(dmAll.length?dmAll.join("، "):"لا أحد")+"\n"+(W.filter(w=>w.mode!=="del").map(w=>"إضافة "+w.data.length+" لوحة للمالك: "+w.name2).join("\n")||"بدون إضافة")+"\nمتابعة؟"))return;
   $("applyBtn").disabled=true;log("جاري التنفيذ…");
   await new Promise(r=>setTimeout(r,50));
   if(!S.wb){log("جاري تجهيز الشيت الأساسي… قد يستغرق دقيقة");await new Promise(r=>setTimeout(r,30));const wb=new ExcelJS.Workbook();await wb.xlsx.load(S.bytes);S.wb=wb;S.ws=wb.getWorksheet(S.sheetName)||wb.worksheets[0]}
@@ -358,7 +370,7 @@ $("applyBtn").onclick=async()=>{
     for(let r=S.h+1;r<=ws.rowCount;r++){
       const row=ws.getRow(r),o=ctext(row.getCell(S.oc));
       if(left.has(o))left.set(o,left.get(o)+1);
-      if(dmAll.includes(o)){const ks=W.map(w=>w.found.get(o)).filter(Boolean);const k=norm(ctext(row.getCell(S.pc))).key;if(ks.some(x=>x.has(k)))leftDm++}
+      if(W.some(w=>w.dm.includes(o)&&w.found.get(o)?.has(norm(ctext(row.getCell(S.pc))).key)))leftDm++
     }
     const bad=[...left].filter(([,n])=>n>0);
     if(bad.length||leftDm>0){
@@ -376,20 +388,28 @@ $("applyBtn").onclick=async()=>{
   S._fixed=fixed;
   const last=ws.getRow(ws.rowCount),tpl=S.heads.map((_,c)=>JSON.parse(JSON.stringify(last.getCell(c+1).style||{})));
   let added=0,skippedDuplicates=0;
-  const existingByOwner=new Map();
+  const existingByOwner=new Map(),existingRowsByOwnerKey=new Map();
   for(let r=S.h+1;r<=ws.rowCount;r++){
     const row=ws.getRow(r),owner=ctext(row.getCell(S.oc)),key=norm(ctext(row.getCell(S.pc))).key;
     if(!owner||!key)continue;
     if(!existingByOwner.has(owner))existingByOwner.set(owner,new Set());
     existingByOwner.get(owner).add(key);
+    if(!existingRowsByOwnerKey.has(owner))existingRowsByOwnerKey.set(owner,new Map());
+    const byKey=existingRowsByOwnerKey.get(owner);if(!byKey.has(key))byKey.set(key,[]);byKey.get(key).push(r);
   }
   for(const w of W){
     if(w.mode==="del")continue;
-    const m=mapCols(w),ownerKeys=existingByOwner.get(w.name2)||new Set();
+    const m=mapCols(w),ownerKeys=existingByOwner.get(w.name2)||new Set(),typeDest=m.findIndex(j=>j===-5)+1;
     existingByOwner.set(w.name2,ownerKeys);
+    if(!existingRowsByOwnerKey.has(w.name2))existingRowsByOwnerKey.set(w.name2,new Map());
+    const ownerRows=existingRowsByOwnerKey.get(w.name2);
     for(const r of w.data){
       const z=norm(r[w.pi]);if(!z.key)continue;
-      if(ownerKeys.has(z.key)){skippedDuplicates++;continue;}
+      if(ownerKeys.has(z.key)){
+        const suppliedType=w.isPasted&&w.bi>=0?String(r[w.bi]==null?"":r[w.bi]).trim():"";
+        if(suppliedType&&typeDest>0)(ownerRows.get(z.key)||[]).forEach(rr=>{ws.getRow(rr).getCell(typeDest).value=suppliedType});
+        skippedDuplicates++;continue;
+      }
       ownerKeys.add(z.key);
       const plate=z.L+z.D;
       const vals=m.map(j=>{
@@ -402,6 +422,7 @@ $("applyBtn").onclick=async()=>{
       });
       const row=ws.addRow(vals);
       tpl.forEach((st,c)=>{row.getCell(c+1).style=st});
+      if(!ownerRows.has(z.key))ownerRows.set(z.key,[]);ownerRows.get(z.key).push(row.number);
       added++;
       if(z.L&&z.D&&!RU.has(w.name2))RU.set(w.name2,{o:w.name2,p:plate,k:z.key,n:row.number});
     }
@@ -566,8 +587,10 @@ $("pasteBtn").onclick=()=>{
     if(tab){pi=pickPlateCol(heads,data,[]);if(pi<0)pi=0}
   }
   data=data.map(r=>{r=r.slice();while(r.length<heads.length)r.push("");return r});
+  let typeCol=heads.findIndex(t=>/^(ال)?نوع(\s*(السيارة|المركبة))?$|ماركة|ماركه|make|brand|vehicle|car\s*type/i.test(String(t||"").trim()));
+  if(typeCol<0){typeCol=heads.length;heads=[...heads,"النوع"];data=data.map(r=>{r.push("");return r})}
   const mode=$("pasteMode").value;
-  const w={name:(mode==="del"?"حذف لوحات ملصوقة (":"إضافة لوحات ملصوقة (")+new Date().toLocaleTimeString("ar-EG")+")",heads,data,pi,mode:mode==="add"?undefined:"del",pasteIntent:mode};
+  const w={name:(mode==="del"?"حذف لوحات ملصوقة (":"إضافة لوحات ملصوقة (")+new Date().toLocaleTimeString("ar-EG")+")",heads,data,pi,isPasted:true,mode:mode==="add"?undefined:"del",pasteIntent:mode,selectedOwners:new Set()};
   W.push(w);analyze(w);renderWallets();
   $("walInfo").textContent="تمت إضافة "+data.length+" صف من اللصق";
   $("paste").value="";

@@ -250,9 +250,14 @@ $("walf").onchange=async e=>{
     }
     const hasHeader=h>=0&&bestScore>=1;
     const heads=hasHeader?(rows[h]||[]).map(String):Array.from({length:Math.max(0,...rows.map(r=>r.length))},(_,c)=>"عمود "+(c+1));
-    const data=(hasHeader?rows.slice(h+1):rows).filter(r=>r.some(x=>String(x).trim()));
+    // نحتفظ بالصفوف التي تحتوي أي بيانات مؤقتاً لاكتشاف عمود اللوحة،
+    // ثم نعتمد فقط الصفوف التي تحتوي قيمة فعلية في عمود اللوحة نفسه.
+    // بعض ملفات المحافظ تمدّ النطاق بصفوف ترقيم/تنسيق إضافية (مثل 7466–8000)
+    // رغم أن عمود اللوحة فارغ فيها؛ لا تُحسب هذه الصفوف ضمن اللوحات.
+    const rawData=(hasHeader?rows.slice(h+1):rows).filter(r=>r.some(x=>String(x).trim()));
     const cand=heads.map((t,c)=>RX_P.test(t)?c:-1).filter(c=>c>=0);
-    const pi=pickPlateCol(heads,data,cand);
+    const pi=pickPlateCol(heads,rawData,cand);
+    const data=pi>=0?rawData.filter(r=>String(r[pi]==null?"":r[pi]).trim()!==""):rawData;
     W.push({name:f.name,heads,data,pi});
   }
   W.forEach(analyze);renderWallets();

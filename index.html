@@ -32,7 +32,7 @@ label{display:block}
 </style>
 </head>
 <body>
-<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v24</span></h1>
+<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v25 تجريبية</span></h1>
 
 <div class="card">
 <h2>١) الشيت الأساسي المجمع (xlsx)</h2>
@@ -248,12 +248,20 @@ $("walf").onchange=async e=>{
         bestScore=score;bestFilled=cells.length;h=ri;
       }
     }
-    if(h<0){h=rows.findIndex(r=>r.filter(x=>String(x).trim()).length>=2);if(h<0)h=0;}
-    const heads=(rows[h]||[]).map(String);
-    const data=rows.slice(h+1).filter(r=>r.some(x=>String(x).trim()));
+    // بعض المحافظ تأتي بدون صف عناوين نهائياً؛ لا نعتبر أول سجل بيانات عناوين.
+    const hasHeader=h>=0;
+    let heads,data;
+    if(hasHeader){
+      heads=(rows[h]||[]).map(String);
+      data=rows.slice(h+1).filter(r=>r.some(x=>String(x).trim()));
+    }else{
+      data=rows.filter(r=>r.some(x=>String(x).trim()));
+      const width=Math.max(0,...data.map(r=>r.length));
+      heads=Array.from({length:width},(_,c)=>"عمود "+(c+1));
+    }
     const cand=heads.map((t,c)=>RX_P.test(t)?c:-1).filter(c=>c>=0);
     const pi=pickPlateCol(heads,data,cand);
-    W.push({name:f.name,heads,data,pi});
+    W.push({name:f.name,heads,data,pi,headerless:!hasHeader});
   }
   W.forEach(analyze);renderWallets();
   $("walInfo").textContent="تم قراءة: "+W.map(w=>w.name+" ("+w.data.length+" صف)").join("، ");
@@ -271,6 +279,9 @@ function detect(w){
   const mi=H.findIndex((t,c)=>![w.pi,ci,yi].includes(c)&&/طراز|model|موديل/i.test(t));
   let bi=H.findIndex((t,c)=>![w.pi,ci,yi,mi].includes(c)&&/^\s*(ال)?نوع(\s*(السيارة|المركبة))?\s*$|ماركة|ماركه|make|brand|asset|vehicle|type\s*of\s*car|car\s*type|variant|مرك[هة]|مركبة|سيارة/i.test(t));
   if(bi<0&&mi>0&&![w.pi,ci,yi].includes(mi-1))bi=mi-1;
+  // في المحافظ بلا عناوين: العمودان السابقان للوحة هما (الشركة، ثم الموديل)
+  // وفق تنسيق المحفظة المرفقة؛ لا نضم سنة الصنع إلى نوع السيارة.
+  if(w.headerless&&w.pi>=2){bi=w.pi-1;mi=w.pi-2;yi=-1;ci=-1;}
   w.ci=ci;w.yi=yi;w.mi=mi;w.bi=bi;
 }
 function analyze(w){

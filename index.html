@@ -318,7 +318,7 @@ function renderWallets(){
     const plain=w.mode?true:false;
     const ow=w.owners.length?w.owners.map((o,j)=>{
       const control=w.mode==="del"?`<input type="checkbox" class="del-owner-check" data-w="${i}" data-j="${j}" aria-label="حذف اللوحات من ${esc(o)}" ${w.selectedOwners&&w.selectedOwners.has(o)?"checked":""}>`:plain?"":`<select class="op" data-w="${i}" data-j="${j}" style="width:auto;flex:none;max-width:42%;font-size:.9rem"><option value="0">بدون</option><option value="r">استبدال</option><option value="d">حذف المطابق</option></select>`;
-      const excludeControl=!plain&&w.mode!=="del"?`<label class="exclude-owner-label" style="display:flex;align-items:center;gap:4px;font-size:.78rem;white-space:nowrap"><input type="checkbox" class="exclude-owner-check" data-w="${i}" data-j="${j}" ${w.excludeOwners&&w.excludeOwners.has(o)?"checked":""} disabled>استبعاد لوحاته</label>`:"";
+      const excludeControl=!plain&&w.mode!=="del"?`<label class="exclude-owner-label" data-w="${i}" data-j="${j}" hidden style="display:none;align-items:center;gap:4px;font-size:.78rem;white-space:nowrap"><input type="checkbox" class="exclude-owner-check" data-w="${i}" data-j="${j}" ${w.excludeOwners&&w.excludeOwners.has(o)?"checked":""}>استبعاد لوحاته</label>`:"";
       return `<div class="own">${control}${excludeControl}<div style="flex:1"><b>${esc(o||"(بدون اسم)")}</b>${!plain&&w.owners.length>1&&j===w.owners.length-1?' <span class="er">(الأقل تطابقاً)</span>':''}<br><span class="mut">يطابق ${w.found.get(o).size} لوحة من المحفظة · لديه ${S.byOwner.get(o).length} صف في الأساسي</span>${vbtn(o)}</div></div>`;
     }).join(""):'<div class="mut">لم يتم العثور على أي لوحة في الأساسي</div>';
     const def=w.owners.length===1?w.owners[0]:"";
@@ -344,18 +344,33 @@ ${cols}${head}${pasteList}${ow}${nameBox}</div>`;
   document.querySelectorAll(".vb").forEach(b=>b.onclick=()=>{const d=b.nextElementSibling;d.hidden=!d.hidden;b.textContent=d.hidden?"عرض اللوحات":"إخفاء اللوحات"});
   document.querySelectorAll(".del-owner-check").forEach(c=>c.onchange=()=>{const w=W[+c.dataset.w],o=w.owners[+c.dataset.j];if(!w.selectedOwners)w.selectedOwners=new Set();if(c.checked)w.selectedOwners.add(o);else w.selectedOwners.delete(o)});
   const refreshExcludeControls=(wi)=>{
-    const w=W[wi],target=String(($(`on${wi}`)||{}).value||"").trim();
-    const replaceSelected=[...document.querySelectorAll(`select.op[data-w="${wi}"]`)].some(x=>x.value==="r");
-    document.querySelectorAll(`.exclude-owner-check[data-w="${wi}"]`).forEach(c=>{
-      const owner=w.owners[+c.dataset.j],isTarget=norm(owner).key===norm(target).key;
-      c.disabled=!replaceSelected||!target||isTarget;
-      if(c.disabled&&isTarget&&w.excludeOwners)w.excludeOwners.delete(owner);
-      const label=c.closest("label");if(label)label.lastChild.textContent=target?`استبعاد لوحاته من ${target}`:"استبعاد لوحاته";
+    const w=W[wi];
+    const selects=[...document.querySelectorAll(`select.op[data-w="${wi}"]`)];
+    const replaceOwners=selects.filter(x=>x.value==="r").map(x=>w.owners[+x.dataset.j]);
+    const active=replaceOwners.length===1?replaceOwners[0]:"";
+    document.querySelectorAll(`.exclude-owner-label[data-w="${wi}"]`).forEach(label=>{
+      const j=+label.dataset.j,owner=w.owners[j];
+      const isReplacementOwner=replaceOwners.some(x=>norm(x).key===norm(owner).key);
+      const show=!!active&&!isReplacementOwner;
+      label.hidden=!show;
+      label.style.display=show?"flex":"none";
+      const c=label.querySelector("input");
+      c.disabled=!show;
+      if(!show&&w.excludeOwners)w.excludeOwners.delete(owner);
+      const text=label.lastChild;
+      if(text)text.textContent=`استبعاد لوحاته من ${active||"المالك المستبدَل"}`;
     });
+    if(replaceOwners.length>1){
+      document.querySelectorAll(`.exclude-owner-label[data-w="${wi}"]`).forEach(label=>{label.hidden=true;label.style.display="none";});
+    }
   };
   document.querySelectorAll("select.op").forEach(c=>c.onchange=()=>refreshExcludeControls(+c.dataset.w));
-  document.querySelectorAll(".exclude-owner-check").forEach(c=>c.onchange=()=>{const w=W[+c.dataset.w],o=w.owners[+c.dataset.j];if(!w.excludeOwners)w.excludeOwners=new Set();if(c.checked)w.excludeOwners.add(o);else w.excludeOwners.delete(o)});
-  W.forEach((w,i)=>{const n=$(`on${i}`);if(n)n.oninput=()=>refreshExcludeControls(i);refreshExcludeControls(i)});
+  document.querySelectorAll(".exclude-owner-check").forEach(c=>c.onchange=()=>{
+    const w=W[+c.dataset.w],o=w.owners[+c.dataset.j];
+    if(!w.excludeOwners)w.excludeOwners=new Set();
+    if(c.checked)w.excludeOwners.add(o);else w.excludeOwners.delete(o);
+  });
+  W.forEach((w,i)=>refreshExcludeControls(i));
   document.querySelectorAll(".paste-type").forEach(inp=>inp.oninput=()=>{const w=W[+inp.dataset.w];w.data[+inp.dataset.row][w.bi]=inp.value});
   $("applyBox").hidden=!W.length;
 }

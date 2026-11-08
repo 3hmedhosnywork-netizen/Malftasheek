@@ -20,17 +20,8 @@ button{background:var(--ac);color:#fff;border:0;border-radius:10px;padding:12px 
 button:disabled{opacity:.5}
 .mut{color:var(--mut);font-size:.88rem}
 .ok{color:var(--ok)}.er{color:var(--er)}
-.own{display:flex;flex-direction:column;gap:8px;align-items:stretch;padding:12px 0;border-top:1px solid var(--bd);min-width:0;width:100%}
-.own-actions{display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap;width:100%;min-width:0}
-.own-actions .op{width:auto!important;min-width:112px;max-width:48%;flex:0 1 160px!important;margin:0}
-.own-actions input[type=checkbox]{width:22px;height:22px;margin:0;flex:none;accent-color:var(--ac)}
-.own-actions .exclude-owner-label{display:flex;align-items:center;gap:6px;white-space:normal;line-height:1.4;max-width:100%;font-size:.84rem!important}
-.own-info{width:100%;min-width:0;overflow-wrap:anywhere;word-break:normal}
-.own-info b{display:inline-block;max-width:100%;overflow-wrap:anywhere}
-.own-info .mut{display:inline-block;max-width:100%;line-height:1.7}
-/* Keep collapsed plate lists hidden; .own-info .mut otherwise overrides the browser hidden rule. */
-.mut[hidden]{display:none!important}
-.own-info .vb{display:inline-block;max-width:100%;white-space:normal}
+.own{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--bd)}
+.own input{width:22px;height:22px;margin-top:3px;flex:none}
 .paste-plate-list{max-height:260px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;margin:8px 0;background:var(--bg)}
 .paste-plate-row{display:grid;grid-template-columns:minmax(88px,.8fr) minmax(0,1.2fr);gap:7px;align-items:center;padding:4px 7px;border-bottom:1px solid var(--bd);font-size:.84rem}
 .paste-plate-row:last-child{border-bottom:0}
@@ -292,8 +283,22 @@ function detect(w){
   if(ci<0){let b=0;for(let c=0;c<n;c++)if(c!==w.pi){const f=frac(c,/^[A-Z0-9]{17}$/i);if(f>b){b=f;ci=c}}if(b<.5)ci=-1}
   let yi=H.findIndex((t,c)=>c!==w.pi&&/year|سنة|موديل\s*الصنع/i.test(t));
   if(yi<0){let b=0;for(let c=0;c<n;c++)if(c!==w.pi&&c!==ci){const f=frac(c,YR);if(f>b){b=f;yi=c}}if(b<.5)yi=-1}
+  const excludedTypeHeader=/شهادة|نوع\s*الشهادة|عقد|مدة|اشهر|أشهر|متتالية|certificate|contract|period|installment/i;
+  // نفضّل عمود طراز/نوع المركبة الفعلي، ولا نأخذ «نوع الشهادة» أو مدد التعثر كنوع للمركبة.
   let makei=H.findIndex((t,c)=>c!==w.pi&&c!==ci&&c!==yi&&/manufacturer|make|brand|مصنع|صانع|الشركة|الماركة/i.test(t));
-  let bi=H.findIndex((t,c)=>![w.pi,ci,yi,makei].includes(c)&&/model|type|نوع|طراز|موديل|vehicle|car/i.test(t));
+  const vehicleHeaderScore=t=>{
+    if(excludedTypeHeader.test(String(t||"")))return -1;
+    if(/طراز\s*المركبة|موديل\s*المركبة|vehicle\s*model|car\s*model/i.test(t))return 5;
+    if(/نوع\s*المركبة|vehicle\s*type/i.test(t))return 4;
+    if(/model|طراز|موديل/i.test(t))return 3;
+    if(/نوع|type/i.test(t))return 1;
+    return -1;
+  };
+  let bi=-1,bh=-1;
+  for(let c=0;c<n;c++)if(![w.pi,ci,yi,makei].includes(c)){
+    const hs=vehicleHeaderScore(H[c]);if(hs>bh){bh=hs;bi=c}
+  }
+  if(bh<0)bi=-1;
   if(makei<0||bi<0){let bestMake={c:-1,s:0},bestModel={c:-1,s:0};for(let c=0;c<n;c++)if(![w.pi,ci,yi].includes(c)){
     const ms=scoreDict(c,MAKER_SET),ts=scoreDict(c,MODEL_SET);
     if(ms>bestMake.s)bestMake={c,s:ms};if(ts>bestModel.s)bestModel={c,s:ts};
@@ -301,11 +306,11 @@ function detect(w){
     if(makei<0&&bestMake.s>=.12)makei=bestMake.c;
     if(bi<0&&bestModel.s>=.12)bi=bestModel.c;
   }
-  // عند وجود سنة ومصنع ونوع بلا عناوين نعتمد التوزيع حسب محتوى الأعمدة، لا حسب موضعها.
+  // المخرَج يقتصر على الصانع وطراز/نوع المركبة؛ سنة الصنع لا تدخل في خانة النوع.
   w.ci=ci;w.yi=yi;w.makei=makei;w.bi=bi;w.mi=-1;
 }
 function vehicleTypeValue(w,r){
-  const indexes=[w.makei,w.bi,w.yi];
+  const indexes=[w.makei,w.bi];
   return indexes.map(x=>x>=0?String(r[x]==null?"":r[x]).trim():"")
     .filter(v=>v&&!/^(بدون|لا\s*يوجد|غير\s*(موجود|محدد)|-+|—|n\/?a|null|none)$/i.test(v)).join(" / ");
 }
@@ -327,8 +332,7 @@ function renderWallets(){
     const plain=w.mode?true:false;
     const ow=w.owners.length?w.owners.map((o,j)=>{
       const control=w.mode==="del"?`<input type="checkbox" class="del-owner-check" data-w="${i}" data-j="${j}" aria-label="حذف اللوحات من ${esc(o)}" ${w.selectedOwners&&w.selectedOwners.has(o)?"checked":""}>`:plain?"":`<select class="op" data-w="${i}" data-j="${j}" style="width:auto;flex:none;max-width:42%;font-size:.9rem"><option value="0">بدون</option><option value="r">استبدال</option><option value="d">حذف المطابق</option></select>`;
-      const excludeControl=!plain&&w.mode!=="del"?`<label class="exclude-owner-label" data-w="${i}" data-j="${j}" hidden style="display:none;align-items:center;gap:4px;font-size:.78rem;white-space:nowrap"><input type="checkbox" class="exclude-owner-check" data-w="${i}" data-j="${j}" ${w.excludeOwners&&w.excludeOwners.has(o)?"checked":""}>استبعاد لوحاته</label>`:"";
-      return `<div class="own"><div class="own-actions">${control}${excludeControl}</div><div class="own-info"><b>${esc(o||"(بدون اسم)")}</b>${!plain&&w.owners.length>1&&j===w.owners.length-1?' <span class="er">(الأقل تطابقاً)</span>':''}<br><span class="mut">يطابق ${w.found.get(o).size} لوحة من المحفظة · لديه ${S.byOwner.get(o).length} صف في الأساسي</span>${vbtn(o)}</div></div>`;
+      return `<div class="own">${control}<div style="flex:1"><b>${esc(o||"(بدون اسم)")}</b>${!plain&&w.owners.length>1&&j===w.owners.length-1?' <span class="er">(الأقل تطابقاً)</span>':''}<br><span class="mut">يطابق ${w.found.get(o).size} لوحة من المحفظة · لديه ${S.byOwner.get(o).length} صف في الأساسي</span>${vbtn(o)}</div></div>`;
     }).join(""):'<div class="mut">لم يتم العثور على أي لوحة في الأساسي</div>';
     const def=w.owners.length===1?w.owners[0]:"";
     let head,nameBox;
@@ -342,7 +346,7 @@ function renderWallets(){
       head=`<div class="mut" style="margin-top:8px">${"لكل مالك اختر: «استبدال» (حذف كل لوحاته القديمة من الأساسي وإضافة المحفظة بدلها) أو «حذف المطابق» (حذف اللوحات الظاهرة له فقط وترك باقي لوحاته):"}</div>`;
       nameBox=`<label class="mut" style="margin-top:8px">اسم المالك للوحات الجديدة (اكتب أو اختر)<input type="text" list="dl" id="on${i}" value="${esc(def)}"></label>`;
     }
-    const cols=w.mode==="del"?"":`<div class="mut">${[["النوع",w.bi],["الطراز",w.mi],["الموديل",w.yi],["الهيكل",w.ci]].map(([a,c])=>a+": "+(c>=0?esc(w.heads[c]||"عمود "+(c+1)):"غير موجود")).join(" · ")}</div>`;
+    const cols=w.mode==="del"?"":`<div class="mut">${[["الصانع",w.makei],["النوع",w.bi],["الهيكل",w.ci]].map(([a,c])=>a+": "+(c>=0?esc(w.heads[c]||"عمود "+(c+1)):"غير موجود")).join(" · ")}</div>`;
     const pasteList=w.isPasted&&w.mode!=="del"&&w.bi>=0?`<div class="mut" style="margin-top:8px">نوع السيارة أمام كل لوحة (اتركه فارغاً لو مش عايز تغيّر النوع):</div><div class="paste-plate-list"><div class="paste-plate-row" style="position:sticky;top:0;background:var(--card);font-weight:700"><span>اللوحة</span><span>نوع السيارة</span></div>${w.data.map((r,k)=>{const z=norm(r[w.pi]);const plate=z.key?z.L+z.D:String(r[w.pi]||"");return `<div class="paste-plate-row"><span class="paste-plate-number">${esc(plate)}</span><input type="text" class="paste-type" data-w="${i}" data-row="${k}" value="${esc(r[w.bi]||"")}" placeholder="النوع والموديل"></div>`}).join("")}</div>`:"";
     return `<div class="card"><h2>${esc(w.name)}</h2>
 <label class="mut">عمود اللوحة في المحفظة<select data-w="${i}" class="wpc">${sel}</select></label>
@@ -352,34 +356,6 @@ ${cols}${head}${pasteList}${ow}${nameBox}</div>`;
   document.querySelectorAll(".wpc").forEach(s=>s.onchange=()=>{const w=W[+s.dataset.w];w.pi=+s.value;analyze(w);renderWallets()});
   document.querySelectorAll(".vb").forEach(b=>b.onclick=()=>{const d=b.nextElementSibling;d.hidden=!d.hidden;b.textContent=d.hidden?"عرض اللوحات":"إخفاء اللوحات"});
   document.querySelectorAll(".del-owner-check").forEach(c=>c.onchange=()=>{const w=W[+c.dataset.w],o=w.owners[+c.dataset.j];if(!w.selectedOwners)w.selectedOwners=new Set();if(c.checked)w.selectedOwners.add(o);else w.selectedOwners.delete(o)});
-  const refreshExcludeControls=(wi)=>{
-    const w=W[wi];
-    const selects=[...document.querySelectorAll(`select.op[data-w="${wi}"]`)];
-    const replaceOwners=selects.filter(x=>x.value==="r").map(x=>w.owners[+x.dataset.j]);
-    const active=replaceOwners.length===1?replaceOwners[0]:"";
-    document.querySelectorAll(`.exclude-owner-label[data-w="${wi}"]`).forEach(label=>{
-      const j=+label.dataset.j,owner=w.owners[j];
-      const isReplacementOwner=replaceOwners.some(x=>norm(x).key===norm(owner).key);
-      const show=!!active&&!isReplacementOwner;
-      label.hidden=!show;
-      label.style.display=show?"flex":"none";
-      const c=label.querySelector("input");
-      c.disabled=!show;
-      if(!show&&w.excludeOwners)w.excludeOwners.delete(owner);
-      const text=label.lastChild;
-      if(text)text.textContent=`استبعاد لوحاته من ${active||"المالك المستبدَل"}`;
-    });
-    if(replaceOwners.length>1){
-      document.querySelectorAll(`.exclude-owner-label[data-w="${wi}"]`).forEach(label=>{label.hidden=true;label.style.display="none";});
-    }
-  };
-  document.querySelectorAll("select.op").forEach(c=>c.onchange=()=>refreshExcludeControls(+c.dataset.w));
-  document.querySelectorAll(".exclude-owner-check").forEach(c=>c.onchange=()=>{
-    const w=W[+c.dataset.w],o=w.owners[+c.dataset.j];
-    if(!w.excludeOwners)w.excludeOwners=new Set();
-    if(c.checked)w.excludeOwners.add(o);else w.excludeOwners.delete(o);
-  });
-  W.forEach((w,i)=>refreshExcludeControls(i));
   document.querySelectorAll(".paste-type").forEach(inp=>inp.oninput=()=>{const w=W[+inp.dataset.w];w.data[+inp.dataset.row][w.bi]=inp.value});
   $("applyBox").hidden=!W.length;
 }
@@ -405,16 +381,12 @@ $("applyBtn").onclick=async()=>{
   for(let i=0;i<W.length;i++){
     const nb=$("on"+i);W[i].name2=nb?nb.value.trim():"";
     if(W[i].mode!=="del"&&!W[i].name2){alert("اكتب اسم المالك للمحفظة: "+W[i].name);return}
-    W[i].del=[];W[i].dm=[];W[i].excludeOwnersSelected=[];
+    W[i].del=[];W[i].dm=[];
     if(W[i].mode==="del")document.querySelectorAll(`input.del-owner-check[data-w="${i}"]:checked`).forEach(c=>W[i].dm.push(W[i].owners[+c.dataset.j]));
-    else if(!W[i].mode){
-      document.querySelectorAll(`select.op[data-w="${i}"]`).forEach(s=>{const o=W[i].owners[+s.dataset.j];if(s.value==="r")W[i].del.push(o);else if(s.value==="d")W[i].dm.push(o)});
-      document.querySelectorAll(`.exclude-owner-check[data-w="${i}"]:checked:enabled`).forEach(c=>W[i].excludeOwnersSelected.push(W[i].owners[+c.dataset.j]));
-    }
+    else if(!W[i].mode)document.querySelectorAll(`select.op[data-w="${i}"]`).forEach(s=>{const o=W[i].owners[+s.dataset.j];if(s.value==="r")W[i].del.push(o);else if(s.value==="d")W[i].dm.push(o)});
   }
   const all=[...new Set(W.flatMap(w=>w.del))],dmAll=[...new Set(W.flatMap(w=>w.dm))];
-  const excludedSummary=W.filter(w=>w.excludeOwnersSelected&&w.excludeOwnersSelected.length).map(w=>w.name2+": استبعاد لوحات "+w.excludeOwnersSelected.join("، ")).join("\n");
-  if(!confirm("استبدال (حذف كل الصفوف): "+(all.length?all.join("، "):"لا أحد")+"\nحذف اللوحات المطابقة فقط من الملاك المحددين: "+(dmAll.length?dmAll.join("، "):"لا أحد")+"\n"+(W.filter(w=>w.mode!=="del").map(w=>"إضافة "+w.data.length+" لوحة للمالك: "+w.name2).join("\n")||"بدون إضافة")+(excludedSummary?"\n"+excludedSummary:"")+"\nمتابعة؟"))return;
+  if(!confirm("استبدال (حذف كل الصفوف): "+(all.length?all.join("، "):"لا أحد")+"\nحذف اللوحات المطابقة فقط من الملاك المحددين: "+(dmAll.length?dmAll.join("، "):"لا أحد")+"\n"+(W.filter(w=>w.mode!=="del").map(w=>"إضافة "+w.data.length+" لوحة للمالك: "+w.name2).join("\n")||"بدون إضافة")+"\nمتابعة؟"))return;
   $("applyBtn").disabled=true;log("جاري التنفيذ…");
   await new Promise(r=>setTimeout(r,50));
   if(!S.wb){log("جاري تجهيز الشيت الأساسي… قد يستغرق دقيقة");await new Promise(r=>setTimeout(r,30));const wb=new ExcelJS.Workbook();await wb.xlsx.load(S.bytes);S.wb=wb;S.ws=wb.getWorksheet(S.sheetName)||wb.worksheets[0]}
@@ -472,11 +444,8 @@ $("applyBtn").onclick=async()=>{
     existingByOwner.set(w.name2,ownerKeys);
     if(!existingRowsByOwnerKey.has(w.name2))existingRowsByOwnerKey.set(w.name2,new Map());
     const ownerRows=existingRowsByOwnerKey.get(w.name2);
-    const excludedKeys=new Set();
-    (w.excludeOwnersSelected||[]).forEach(owner=>{const keys=w.found.get(owner);if(keys)keys.forEach(k=>excludedKeys.add(k))});
     for(const r of w.data){
       const z=norm(r[w.pi]);if(!z.key)continue;
-      if(excludedKeys.has(z.key)){skippedDuplicates++;continue}
       if(ownerKeys.has(z.key)){
         const suppliedType=w.isPasted?(w.bi>=0?String(r[w.bi]==null?"":r[w.bi]).trim():""):vehicleTypeValue(w,r);
         if(suppliedType&&typeDest>0)(ownerRows.get(z.key)||[]).forEach(rr=>{ws.getRow(rr).getCell(typeDest).value=suppliedType});

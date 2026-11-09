@@ -247,7 +247,7 @@ $("walf").onchange=async e=>{
     sh["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:mr,c:mc}});
     const rows=XLSX.utils.sheet_to_json(sh,{header:1,raw:false,defval:""});
     // لا نفترض وجود عناوين: نختار صف العناوين فقط عند وجود كلمات عناوين واضحة.
-    const headerRe=/(?:لوحة|رقم\s*اللوحة|plate|owner|مالك|اسم\s*المالك|manufacturer|مصنع|صانع\s*المركبة|نوع\s*السيارة|نوع\s*المركبة|model|موديل|year|سنة\s*الصنع|chassis|vin|هيكل)/i;
+    const headerRe=/(?:لوحة|رقم\s*اللوحة|plate|owner|مالك|اسم\s*المالك|manufacturer|astassets|مصنع|صانع\s*المركبة|نوع\s*السيارة|نوع\s*المركبة|model|موديل|year|سنة\s*الصنع|chassis|vin|هيكل)/i;
     let h=-1,bestScore=0,bestFilled=0;
     for(let ri=0;ri<Math.min(rows.length,30);ri++){
       const cells=(rows[ri]||[]).map(x=>String(x==null?"":x).trim()).filter(Boolean);
@@ -286,6 +286,8 @@ function detect(w){
   const H=w.heads,n=H.length,rows=w.data.slice(0,Math.min(800,w.data.length));
   const headerKey=t=>normVehicleText(t).replace(/\s+/g,"");
   const isNonVehicleHeader=t=>/(شهاده|الشهاده|نوعالشهاده|certificate|contract|عقد|مده|اشهر|شهور|متتاليه|قسط|دفعات|تأخير|تاخير|تعثر|ملاحظات|حاله|status|payment)/i.test(headerKey(t));
+  // Some repossession wallets store manufacturer and vehicle type together in ASTASSETS (e.g. HYUNDAI ELANTRA).
+  const assetsi=H.findIndex((t,c)=>c!==w.pi&&/^(astassets|vehicleassets|assetdescription|vehicle_description)$/i.test(headerKey(t)));
   const frac=(c,re)=>{let k=0,t=0;rows.forEach(r=>{const v=String(r[c]==null?"":r[c]).trim();if(v){t++;if(re.test(v.replace(/\s/g,"")))k++}});return t?k/t:0};
   const vals=c=>rows.map(r=>String(r[c]==null?"":r[c]).trim()).filter(Boolean);
   const scoreDict=(c,set)=>{const a=vals(c);if(!a.length)return 0;let k=0;a.forEach(v=>{if(set.has(normVehicleText(v)))k++});return k/a.length};
@@ -318,9 +320,16 @@ function detect(w){
   }
   // Final guard: the same source column cannot serve as both manufacturer and vehicle type.
   if(makei===bi)bi=-1;
-  w.ci=ci;w.yi=yi;w.makei=makei;w.bi=bi;w.mi=-1;
+  // Treat ASTASSETS as the detected vehicle type field for status/diagnostics as well.
+  if(assetsi>=0){bi=assetsi;makei=-1;}
+  w.ci=ci;w.yi=yi;w.makei=makei;w.bi=bi;w.mi=-1;w.assetsi=assetsi;
 }
 function vehicleTypeValue(w,r){
+  // ASTASSETS contains the manufacturer and vehicle type together (e.g. HYUNDAI ELANTRA); use it as-is and never append Car Model/year.
+  if(w.assetsi>=0){
+    const combined=String(r[w.assetsi]==null?"":r[w.assetsi]).trim();
+    if(combined&&!/^(بدون|لا\s*يوجد|غير\s*(موجود|محدد)|-+|—|n\/?a|null|none)$/i.test(combined))return combined;
+  }
   // Output manufacturer + vehicle type only. Year/model-year and certificate type are intentionally excluded.
   const indexes=[w.makei,w.bi];
   const bad=/^(بدون|لا\s*يوجد|غير\s*(موجود|محدد)|-+|—|n\/?a|null|none)$/i;

@@ -84,23 +84,27 @@ const AR="٠١٢٣٤٥٦٧٨٩",PE="۰۱۲۳۴۵۶۷۸۹";
 const RX_P=/لوح|plate/i,RX_O=/مالك|ملك|owner|عميل|بنك|اسم/i,RX_C=/هيكل|شاسي|شاص|chassis|vin/i;
 let S=null,W=[];
 
-const LA={A:"ا",B:"ب",D:"د",E:"ع",G:"ق",H:"ه",J:"ح",K:"ك",L:"ل",N:"ن",R:"ر",S:"س",T:"ط",U:"و",V:"ي",X:"ص",Z:"م"};
+// Saudi plate letter transliteration (English keyboard form -> Arabic plate letters).
+// V is used for ي/ى; Arabic ى is canonicalised to ي.
+const LA={A:"ا",B:"ب",J:"ح",D:"د",E:"ع",G:"ق",K:"ك",L:"ل",V:"ي",R:"ر",S:"س",X:"ص",T:"ط",N:"ن",Z:"م",H:"ه",U:"و"};
+const AR_PLATE_LETTERS=new Set(Object.values(LA));
 function norm(s){
   s=String(s==null?"":s).replace(/\u0640/g,"").replace(/[٠-٩]/g,d=>AR.indexOf(d)).replace(/[۰-۹]/g,d=>PE.indexOf(d)).replace(/[أإآ]/g,"ا").replace(/ى/g,"ي").toUpperCase();
-  let L=(s.match(/[\u0621-\u064A\u0671A-Z]/g)||[]).join("");
-  if(/^[A-Z]+$/.test(L)&&[...L].every(c=>LA[c]))L=[...L].reverse().map(c=>LA[c]).join("");
-  let D=(s.match(/[0-9]/g)||[]).join("");
-  while(D.length>4&&D[0]==="0")D=D.slice(1);
-  if(L.length===3&&D.length>0&&D.length<4)D=D.padStart(4,"0");
-  return {L,D,key:L+D};
+  const raw=(s.match(/[\u0621-\u064A\u0671A-Z]/g)||[]).join("");
+  let L="";
+  if(/^[A-Z]{3}$/.test(raw)&&[...raw].every(c=>LA[c]))L=[...raw].reverse().map(c=>LA[c]).join("");
+  else if(/^[\u0621-\u064A\u0671]{3}$/.test(raw)&&[...raw].every(c=>AR_PLATE_LETTERS.has(c)))L=raw;
+  const D=(s.match(/[0-9]/g)||[]).join("");
+  const valid=L.length===3&&D.length===4;
+  return {L:valid?L:"",D:valid?D:"",key:valid?L+D:""};
 }
+function isSaudiPlateValue(value){return !!norm(value).key;}
 function pickPlateCol(heads,data,cand){
-  const N=data.slice(0,300);
-  const stat=heads.map((_,c)=>{let v=0,a=0;N.forEach(r=>{const t=String(r[c]==null?"":r[c]);if(!t.trim())return;const z=norm(t);if(z.L&&z.D&&z.L.length<=3&&z.D.length<=5){v++;if(/[\u0621-\u064A]/.test(t)&&/[0-9٠-٩]/.test(t))a++}});return {v,a}});
-  const maxV=Math.max(0,...stat.map(x=>x.v));
-  const ar=stat.map((x,c)=>({c,a:x.a})).filter(x=>x.a>0&&x.a>=0.5*maxV);
-  if(ar.length){const hc=ar.find(x=>cand.includes(x.c));return hc?hc.c:ar.sort((p,q)=>q.a-p.a||p.c-q.c)[0].c}
-  if(cand.length)return cand[0];
+  const N=data.slice(0,500);
+  const stat=heads.map((_,c)=>{let v=0;N.forEach(r=>{if(isSaudiPlateValue(r[c]))v++});return {v}});
+  // الاسم الصريح لعمود رقم اللوحة له الأولوية، لكن لا نقبل أي عمود لا يحتوي لوحات سعودية صحيحة.
+  const explicit=cand.map(c=>({c,v:stat[c]?.v||0})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v);
+  if(explicit.length)return explicit[0].c;
   let pi=-1,bn=0;stat.forEach((x,c)=>{if(x.v>bn){bn=x.v;pi=c}});
   return pi;
 }
@@ -140,7 +144,7 @@ function buildIndex(){
   S.pc=pc;S.oc=oc;S.idx=new Map();S.byOwner=new Map();S.ar=false;S.dump=[];
   for(let r=S.h+1;r<=S.ws.rowCount;r++){
     const row=S.ws.getRow(r),p=ctext(row.getCell(pc));if(!p)continue;
-    const o=ctext(row.getCell(oc)),k=norm(p).key;S.dump.push([r,k,o]);
+    const o=ctext(row.getCell(oc)),k=norm(p).key;if(!k)continue;S.dump.push([r,k,o]);
     if(!S.idx.has(k))S.idx.set(k,new Set());S.idx.get(k).add(o);
     if(!S.byOwner.has(o))S.byOwner.set(o,[]);S.byOwner.get(o).push(r);
     if(/[٠-٩]/.test(p))S.ar=true;
@@ -242,32 +246,35 @@ $("walf").onchange=async e=>{
       else if(err.message!=="CANCEL")alert("تعذر قراءة الملف: "+f.name+"\n"+err.message);
       continue;
     }
-    const sh=wb.Sheets[wb.SheetNames[0]];let mr=0,mc=0;
-    for(const k in sh){if(k[0]==="!")continue;const a=XLSX.utils.decode_cell(k);if(a.r>mr)mr=a.r;if(a.c>mc)mc=a.c}
-    sh["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:mr,c:mc}});
-    const rows=XLSX.utils.sheet_to_json(sh,{header:1,raw:false,defval:""});
-    // لا نفترض وجود عناوين: نختار صف العناوين فقط عند وجود كلمات عناوين واضحة.
+    // افحص كل أوراق المصنف؛ لا تختَر ورقة العقود لمجرد أن بها عموداً يبدأ بكلمة "رقم".
     const headerRe=/(?:لوحة|رقم\s*اللوحة|plate|owner|مالك|اسم\s*المالك|manufacturer|astassets|مصنع|صانع\s*المركبة|نوع\s*السيارة|نوع\s*المركبة|model|موديل|year|سنة\s*الصنع|chassis|vin|هيكل)/i;
-    let h=-1,bestScore=0,bestFilled=0;
-    for(let ri=0;ri<Math.min(rows.length,30);ri++){
-      const cells=(rows[ri]||[]).map(x=>String(x==null?"":x).trim()).filter(Boolean);
-      if(cells.length<2)continue;
-      const score=cells.reduce((n,x)=>n+(headerRe.test(x)?1:0),0);
-      if(score>bestScore||(score===bestScore&&score>0&&cells.length>bestFilled)){
-        bestScore=score;bestFilled=cells.length;h=ri;
+    let chosen=null;
+    for(const sheetName of wb.SheetNames){
+      const sh=wb.Sheets[sheetName];let mr=0,mc=0;
+      for(const k in sh){if(k[0]==="!")continue;const a=XLSX.utils.decode_cell(k);if(a.r>mr)mr=a.r;if(a.c>mc)mc=a.c}
+      if(!mr&&!mc)continue;
+      sh["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:mr,c:mc}});
+      const rows=XLSX.utils.sheet_to_json(sh,{header:1,raw:false,defval:""});
+      let h=-1,bestScore=0,bestFilled=0;
+      for(let ri=0;ri<Math.min(rows.length,30);ri++){
+        const cells=(rows[ri]||[]).map(x=>String(x==null?"":x).trim()).filter(Boolean);
+        if(cells.length<2)continue;
+        const score=cells.reduce((n,x)=>n+(headerRe.test(x)?1:0),0);
+        if(score>bestScore||(score===bestScore&&score>0&&cells.length>bestFilled)){bestScore=score;bestFilled=cells.length;h=ri;}
       }
+      const hasHeader=h>=0&&bestScore>=1;
+      const heads=hasHeader?(rows[h]||[]).map(String):Array.from({length:Math.max(0,...rows.map(r=>r.length))},(_,c)=>"عمود "+(c+1));
+      const rawData=(hasHeader?rows.slice(h+1):rows).filter(r=>r.some(x=>String(x).trim()));
+      const cand=heads.map((t,c)=>/رقم\s*اللوحة|لوحة|plate/i.test(t)?c:-1).filter(c=>c>=0);
+      const pi=pickPlateCol(heads,rawData,cand);
+      const validCount=pi>=0?rawData.filter(r=>isSaudiPlateValue(r[pi])).length:0;
+      const explicitPlateHeader=pi>=0&&cand.includes(pi)?1:0;
+      const score=validCount*100+explicitPlateHeader*10000;
+      if(validCount>0&&(!chosen||score>chosen.score))chosen={sheetName,heads,rawData,pi,validCount,score};
     }
-    const hasHeader=h>=0&&bestScore>=1;
-    const heads=hasHeader?(rows[h]||[]).map(String):Array.from({length:Math.max(0,...rows.map(r=>r.length))},(_,c)=>"عمود "+(c+1));
-    // نحتفظ بالصفوف التي تحتوي أي بيانات مؤقتاً لاكتشاف عمود اللوحة،
-    // ثم نعتمد فقط الصفوف التي تحتوي قيمة فعلية في عمود اللوحة نفسه.
-    // بعض ملفات المحافظ تمدّ النطاق بصفوف ترقيم/تنسيق إضافية (مثل 7466–8000)
-    // رغم أن عمود اللوحة فارغ فيها؛ لا تُحسب هذه الصفوف ضمن اللوحات.
-    const rawData=(hasHeader?rows.slice(h+1):rows).filter(r=>r.some(x=>String(x).trim()));
-    const cand=heads.map((t,c)=>RX_P.test(t)?c:-1).filter(c=>c>=0);
-    const pi=pickPlateCol(heads,rawData,cand);
-    const data=pi>=0?rawData.filter(r=>String(r[pi]==null?"":r[pi]).trim()!==""):rawData;
-    W.push({name:f.name,heads,data,pi});
+    if(!chosen){alert("لم يتم العثور على عمود يحتوي لوحات سعودية صحيحة (3 حروف عربية و4 أرقام) في الملف: "+f.name);continue;}
+    const data=chosen.rawData.filter(r=>isSaudiPlateValue(r[chosen.pi]));
+    W.push({name:f.name+" · "+chosen.sheetName,heads:chosen.heads,data,pi:chosen.pi});
   }
   W.forEach(analyze);renderWallets();
   $("walInfo").textContent="تم قراءة: "+W.map(w=>w.name+" ("+w.data.length+" صف)").join("، ");
@@ -488,7 +495,7 @@ $("applyBtn").onclick=async()=>{
   let fixed=0;
   for(let r=S.h+1;r<=ws.rowCount;r++){
     const cell=ws.getCell(r,S.pc),t=ctext(cell);
-    if(t&&/[A-Za-z]/.test(t)&&!/[\u0621-\u064A]/.test(t)){const z=norm(t);if(/^[\u0621-\u064A]+$/.test(z.L)&&z.D){cell.value=z.L+z.D;fixed++}}
+    if(t&&/[A-Za-z]/.test(t)){const z=norm(t);if(z.key){cell.value=z.L+z.D;fixed++}}
   }
   S._fixed=fixed;
   const last=ws.getRow(ws.rowCount),tpl=S.heads.map((_,c)=>JSON.parse(JSON.stringify(last.getCell(c+1).style||{})));

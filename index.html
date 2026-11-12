@@ -102,6 +102,12 @@ function norm(s){
   return {L:valid?L:"",D:valid?D:"",key:valid?L+D:""};
 }
 function isSaudiPlateValue(value){return !!norm(value).key;}
+// Detect repeated header rows embedded in the data area (e.g. "رقم اللوحة عربي" / "Plate Number").
+// These are not vehicle records and must never block delete verification.
+function isRepeatedPlateHeader(value){
+  const t=String(value==null?"":value).toLowerCase().replace(/[\s_\-\u0640]/g,"");
+  return /^(?:رقماللوحة(?:عربي|انجليزي|الانجليزية)?|اللوحة|plate(?:number|no)?|thenumberplate|theplatenumber(?:inarabic|inenglish)?)$/.test(t);
+}
 function pickPlateCol(heads,data,cand){
   const N=data.slice(0,500);
   const stat=heads.map((_,c)=>{let v=0;N.forEach(r=>{if(isSaudiPlateValue(r[c]))v++});return {v}});
@@ -483,9 +489,11 @@ $("applyBtn").onclick=async()=>{
     const before=new Map(all.map(o=>[o,(S.byOwner.get(o)||[]).length]));
     const left=new Map(all.map(o=>[o,0]));let leftDm=0;
     for(let r=S.h+1;r<=ws.rowCount;r++){
-      const row=ws.getRow(r),o=ctext(row.getCell(S.oc));
+      const row=ws.getRow(r),plateText=ctext(row.getCell(S.pc)),o=ctext(row.getCell(S.oc));
+      // Repeated column headings inside the data block are ignored by verification.
+      if(isRepeatedPlateHeader(plateText))continue;
       if(left.has(o))left.set(o,left.get(o)+1);
-      if(W.some(w=>w.dm.includes(o)&&w.found.get(o)?.has(norm(ctext(row.getCell(S.pc))).key)))leftDm++
+      if(W.some(w=>w.dm.includes(o)&&w.found.get(o)?.has(norm(plateText).key)))leftDm++
     }
     const bad=[...left].filter(([,n])=>n>0);
     if(bad.length||leftDm>0){

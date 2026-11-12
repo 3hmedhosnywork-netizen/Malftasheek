@@ -303,7 +303,7 @@ function detect(w){
   const headerKey=t=>normVehicleText(t).replace(/\s+/g,"");
   const isNonVehicleHeader=t=>/(شهاده|الشهاده|نوعالشهاده|certificate|contract|عقد|مده|اشهر|شهور|متتاليه|قسط|دفعات|تأخير|تاخير|تعثر|ملاحظات|حاله|status|payment)/i.test(headerKey(t));
   // Some wallets store manufacturer and vehicle type together in ASTASSETS or Car (e.g. HYUNDAI ELANTRA or فاو , تي 77 واجن).
-  const assetsi=H.findIndex((t,c)=>c!==w.pi&&/^(astassets|vehicleassets|assetdescription|vehicle_description|car)$/i.test(headerKey(t)));
+  const assetsi=H.findIndex((t,c)=>c!==w.pi&&/^(astassets|vehicleassets|assetdescription|vehicle_description|car|variant)$/i.test(headerKey(t)));
   const frac=(c,re)=>{let k=0,t=0;rows.forEach(r=>{const v=String(r[c]==null?"":r[c]).trim();if(v){t++;if(re.test(v.replace(/\s/g,"")))k++}});return t?k/t:0};
   const vals=c=>rows.map(r=>String(r[c]==null?"":r[c]).trim()).filter(Boolean);
   const scoreDict=(c,set)=>{const a=vals(c);if(!a.length)return 0;let k=0;a.forEach(v=>{if(set.has(normVehicleText(v)))k++});return k/a.length};
@@ -341,7 +341,7 @@ function detect(w){
   w.ci=ci;w.yi=yi;w.makei=makei;w.bi=bi;w.mi=-1;w.assetsi=assetsi;
 }
 function vehicleTypeValue(w,r){
-  // ASTASSETS or Car contains the manufacturer and vehicle type together; normalize the separator and never append the year column.
+  // ASTASSETS, Car, or VARIANT contains the manufacturer and vehicle type together; normalize the separator and never append the year column.
   if(w.assetsi>=0){
     const combined=String(r[w.assetsi]==null?"":r[w.assetsi]).trim();
     if(combined&&!/^(بدون|لا\s*يوجد|غير\s*(موجود|محدد)|-+|—|n\/?a|null|none)$/i.test(combined)){

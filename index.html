@@ -318,6 +318,7 @@ function detect(w){
   const typeHeaderScore=t=>{
     const h=headerKey(t);if(isNonVehicleHeader(t))return -1;
     if(/نوعالمركبه|طرازالمركبه|vehiclemodel|vehicletype|car_model|carmodel/.test(h))return 10;
+    if(/^(المركبه|مركبه|السياره|سياره|vehicle|vehicles|car|cars)$/.test(h))return 9;
     if(/طراز|فئهالمركبه|vehiclevariant/.test(h))return 8;
     if(/نوع|model|type/.test(h))return 5;
     return -1;
@@ -359,10 +360,20 @@ function detect(w){
   }
   let confidence=bi>=0?Math.max(scoreDict(bi,MODEL_SET),scoreDict(bi,MAKER_SET),contentPick.c===bi?contentPick.s:0):0;
   if((bi<0||confidence<.38)&&contentPick.s>=.38){bi=contentPick.c;confidence=contentPick.s;}
+  // Strong semantic headers such as "المركبة" or "السيارة" are reliable even when the values are unfamiliar model names.
+  if(bi<0){
+    let best={c:-1,s:-1};
+    for(let c=0;c<n;c++)if(![w.pi,ci,yi,makei].includes(c)){
+      const h=headerKey(H[c]);
+      const hs=/^(المركبه|مركبه|السياره|سياره|vehicle|vehicles|car|cars)$/.test(h)?9:typeHeaderScore(H[c]);
+      if(hs>best.s&&hs>=8)best={c,s:hs};
+    }
+    if(best.c>=0){bi=best.c;confidence=.8;}
+  }
   // If the detected field is a known combined source, it remains the preferred single field.
   if(assetsi>=0){bi=assetsi;makei=-1;confidence=1;}
   w.ci=ci;w.yi=yi;w.makei=makei;w.bi=bi;w.mi=-1;w.assetsi=assetsi;w.typeConfidence=confidence;
-  w.needsTypeChoice=bi<0||confidence<.45;
+  w.needsTypeChoice=false;
 }
 function vehicleTypeValue(w,r){
   // ASTASSETS, Car, or VARIANT contains the manufacturer and vehicle type together; normalize the separator and never append the year column.
@@ -419,15 +430,15 @@ function renderWallets(){
       nameBox=`<label class="mut" style="margin-top:8px">اسم المالك للوحات الجديدة (اكتب أو اختر)<input type="text" list="dl" id="on${i}" value="${esc(def)}"></label>`;
     }
     const cols=w.mode==="del"?"":`<div class="mut">${[["النوع",w.bi],["الطراز",w.mi],["الموديل",w.yi],["الهيكل",w.ci]].map(([a,c])=>a+": "+(c>=0?esc(w.heads[c]||"عمود "+(c+1)):"غير موجود")).join(" · ")}</div>`;
-    const typeChooser=w.isWalletUpload&&w.needsTypeChoice?`<div class="card" style="margin-top:10px;border:1px dashed var(--ac)"><b>لم أستطع تحديد أعمدة النوع والطراز تلقائيًا.</b><div class="mut">اعرضت لك عينة واحدة فقط من كل عمود: الخلية رقم 5. اختَر عمود الصانع وعمود الطراز؛ ولو الاثنين في عمود واحد اختَر العمود نفسه في خانة الطراز واترك الصانع فارغًا.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label class="mut">عمود الصانع (اختياري)<select class="type-make-choice" data-w="${i}"><option value="-1">بدون / مدمج مع الطراز</option>${w.heads.map((h,c)=>`<option value="${c}" ${c===w.makei?"selected":""}>${esc(h||"عمود "+(c+1))}</option>`).join("")}</select></label><label class="mut">عمود الطراز / النوع<select class="type-model-choice" data-w="${i}"><option value="-1">بدون نوع</option>${w.heads.map((h,c)=>`<option value="${c}" ${c===w.bi?"selected":""}>${esc(h||"عمود "+(c+1))}</option>`).join("")}</select></label></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-top:8px">${w.heads.map((h,c)=>{const sample=String(w.data[4]?.[c]??"").trim();return `<div style="border:1px solid var(--bd);border-radius:8px;padding:7px"><b>${esc(h||"عمود "+(c+1))}</b><div class="mut" style="font-size:.82rem;overflow-wrap:anywhere">الخلية 5: ${sample?esc(sample):"(فارغة)"}</div></div>`}).join("")}</div><button type="button" class="apply-type-pair" data-w="${i}" style="margin-top:8px">اعتماد العمودين ودمج النوع</button></div>`:"";
+
+
     const pasteList=w.isPasted&&w.mode!=="del"&&w.bi>=0?`<div class="mut" style="margin-top:8px">نوع السيارة أمام كل لوحة (اتركه فارغاً لو مش عايز تغيّر النوع):</div><div class="paste-plate-list"><div class="paste-plate-row" style="position:sticky;top:0;background:var(--card);font-weight:700"><span>اللوحة</span><span>نوع السيارة</span></div>${w.data.map((r,k)=>{const z=norm(r[w.pi]);const plate=z.key?z.L+z.D:String(r[w.pi]||"");return `<div class="paste-plate-row"><span class="paste-plate-number">${esc(plate)}</span><input type="text" class="paste-type" data-w="${i}" data-row="${k}" value="${esc(r[w.bi]||"")}" placeholder="النوع والموديل"></div>`}).join("")}</div>`:"";
     return `<div class="card"><h2>${esc(w.name)}</h2>
 <label class="mut">عمود اللوحة في المحفظة<select data-w="${i}" class="wpc">${sel}</select></label>
 <div>${w.data.length} صف · <span class="ok">موجود: ${w.data.length-w.nf}</span> · <span class="er">غير موجود: ${w.nf}</span></div>
-${cols}${typeChooser}${head}${pasteList}${ow}${nameBox}</div>`;
+${cols}${head}${pasteList}${ow}${nameBox}</div>`;
   }).join("");
   document.querySelectorAll(".wpc").forEach(s=>s.onchange=()=>{const w=W[+s.dataset.w];w.pi=+s.value;analyze(w);renderWallets()});
-  document.querySelectorAll(".apply-type-pair").forEach(b=>b.onclick=()=>{const wi=+b.dataset.w,w=W[wi];const make=+document.querySelector(`.type-make-choice[data-w="${wi}"]`).value,model=+document.querySelector(`.type-model-choice[data-w="${wi}"]`).value;if(make<0&&model<0){alert("اختَر عمود الطراز على الأقل.");return}if(make>=0&&make===model){w.makei=-1;w.bi=model;w.assetsi=model}else{w.makei=make;w.bi=model;w.assetsi=-1}w.mi=-1;w.needsTypeChoice=false;w.typeConfidence=1;renderWallets()});
   document.querySelectorAll(".vb").forEach(b=>b.onclick=()=>{const d=b.nextElementSibling;d.hidden=!d.hidden;b.textContent=d.hidden?"عرض اللوحات":"إخفاء اللوحات"});
   document.querySelectorAll(".del-owner-check").forEach(c=>c.onchange=()=>{const w=W[+c.dataset.w],o=w.owners[+c.dataset.j];if(!w.selectedOwners)w.selectedOwners=new Set();if(c.checked)w.selectedOwners.add(o);else w.selectedOwners.delete(o)});
   const refreshExcludeControls=(wi)=>{

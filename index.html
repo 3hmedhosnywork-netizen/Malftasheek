@@ -448,7 +448,8 @@ ${cols}${head}${pasteList}${ow}${nameBox}</div>`;
     const active=replaceOwners.length===1?replaceOwners[0]:"";
     document.querySelectorAll(`.exclude-owner-label[data-w="${wi}"]`).forEach(label=>{
       const j=+label.dataset.j,owner=w.owners[j];
-      const isReplacementOwner=replaceOwners.some(x=>norm(x).key===norm(owner).key);
+      const ownerKey=v=>String(v==null?"":v).normalize("NFKC").trim().replace(/\s+/g," ").toLocaleLowerCase();
+      const isReplacementOwner=replaceOwners.some(x=>ownerKey(x)===ownerKey(owner));
       const show=!!active&&!isReplacementOwner;
       // استخدم الخاصية والـ attribute معاً حتى لا تظل خانة الاستبعاد مخفية
       // بسبب حالة hidden محفوظة من إعادة رسم سابقة للواجهة.

@@ -152,15 +152,18 @@ function buildIndex(){
   const pc=+$("pcol").value,oc=+$("ocol").value;
   S.pc=pc;S.oc=oc;S.idx=new Map();S.byOwner=new Map();S.ar=false;S.dump=[];
   for(let r=S.h+1;r<=S.ws.rowCount;r++){
-    const row=S.ws.getRow(r),p=ctext(row.getCell(pc));if(!p)continue;
-    const o=ctext(row.getCell(oc)),k=norm(p).key;if(!k)continue;S.dump.push([r,k,o]);
-    if(!S.idx.has(k))S.idx.set(k,new Set());S.idx.get(k).add(o);
+    const row=S.ws.getRow(r),p=ctext(row.getCell(pc)),o=ctext(row.getCell(oc));
+    // الاستبدال يحذف كل صفوف المالك، حتى الصفوف التي لوحتها فارغة أو غير صالحة.
+    // فهرس المطابقة فقط هو الذي يشترط لوحة سعودية صحيحة.
+    if(!o||isRepeatedPlateHeader(p))continue;
     if(!S.byOwner.has(o))S.byOwner.set(o,[]);S.byOwner.get(o).push(r);
+    const k=norm(p).key;S.dump.push([r,k,o]);
+    if(k){if(!S.idx.has(k))S.idx.set(k,new Set());S.idx.get(k).add(o);}
     if(/[٠-٩]/.test(p))S.ar=true;
   }
   let n=0;S.idx.forEach(()=>n++);let rows=0;S.byOwner.forEach(a=>rows+=a.length);
   $("mainInfo").innerHTML='<span class="ok">تم: '+rows+" صف ("+n+" لوحة مختلفة)، "+S.byOwner.size+" مالك · ورقة: "+esc(S.ws.name)+" · صف العناوين: "+S.h+"<br>الملف: "+esc(S.fileName||"")+" · "+new Date().toLocaleString("ar-EG")+"</span>";
-  try{DB.set("index",{pc:S.pc,oc:S.oc,h:S.h,heads:S.heads,sheetName:S.sheetName,ar:S.ar,dump:S.dump,name:S.fileName,at:Date.now(),v:4})}catch(e){}
+  try{DB.set("index",{pc:S.pc,oc:S.oc,h:S.h,heads:S.heads,sheetName:S.sheetName,ar:S.ar,dump:S.dump,name:S.fileName,at:Date.now(),v:5})}catch(e){}
   $("dl").innerHTML=[...S.byOwner.keys()].map(o=>`<option value="${esc(o)}">`).join("");
 }
 
@@ -710,11 +713,11 @@ function designSheet(wb){
 }
 async function fastRestore(){
   const [b,ix]=await Promise.all([DB.get("main"),DB.get("index")]);
-  if(!b||!ix||!ix.dump||ix.v!==4)return false;
+  if(!b||!ix||!ix.dump||ix.v!==5)return false;
   S={fileName:ix.name,bytes:b instanceof Uint8Array?b:new Uint8Array(b),heads:ix.heads,h:ix.h,sheetName:ix.sheetName,pc:ix.pc,oc:ix.oc,ar:ix.ar,idx:new Map(),byOwner:new Map(),dump:ix.dump};
   ix.dump.forEach(([r,k,o])=>{
-    if(!S.idx.has(k))S.idx.set(k,new Set());S.idx.get(k).add(o);
-    if(!S.byOwner.has(o))S.byOwner.set(o,[]);S.byOwner.get(o).push(r);
+    if(o){if(!S.byOwner.has(o))S.byOwner.set(o,[]);S.byOwner.get(o).push(r);}
+    if(k){if(!S.idx.has(k))S.idx.set(k,new Set());S.idx.get(k).add(o);}
   });
   const opts=S.heads.map((t,i)=>'<option value="'+(i+1)+'">'+esc(t||"عمود "+(i+1))+"</option>").join("");
   $("pcol").innerHTML=opts;$("ocol").innerHTML=opts;$("pcol").value=S.pc;$("ocol").value=S.oc;$("cols").hidden=true;

@@ -450,16 +450,24 @@ ${cols}${head}${pasteList}${ow}${nameBox}</div>`;
       const j=+label.dataset.j,owner=w.owners[j];
       const isReplacementOwner=replaceOwners.some(x=>norm(x).key===norm(owner).key);
       const show=!!active&&!isReplacementOwner;
+      // استخدم الخاصية والـ attribute معاً حتى لا تظل خانة الاستبعاد مخفية
+      // بسبب حالة hidden محفوظة من إعادة رسم سابقة للواجهة.
       label.hidden=!show;
+      if(show)label.removeAttribute("hidden");else label.setAttribute("hidden","");
       label.style.display=show?"flex":"none";
       const c=label.querySelector("input");
       c.disabled=!show;
-      if(!show&&w.excludeOwners)w.excludeOwners.delete(owner);
+      if(!w.excludeOwners)w.excludeOwners=new Set();
+      if(!show){c.checked=false;w.excludeOwners.delete(owner);}
       const text=label.lastChild;
       if(text)text.textContent=`استبعاد لوحاته من ${active||"المالك المستبدَل"}`;
     });
     if(replaceOwners.length>1){
-      document.querySelectorAll(`.exclude-owner-label[data-w="${wi}"]`).forEach(label=>{label.hidden=true;label.style.display="none";});
+      document.querySelectorAll(`.exclude-owner-label[data-w="${wi}"]`).forEach(label=>{
+        label.hidden=true;label.setAttribute("hidden","");label.style.display="none";
+        const c=label.querySelector("input");if(c){c.checked=false;c.disabled=true;}
+      });
+      if(w.excludeOwners)w.excludeOwners.clear();
     }
   };
   document.querySelectorAll("select.op").forEach(c=>c.onchange=()=>refreshExcludeControls(+c.dataset.w));

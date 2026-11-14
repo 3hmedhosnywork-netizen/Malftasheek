@@ -241,12 +241,42 @@ async function openProtected(buf,name){
   return out.buffer.slice(out.byteOffset,out.byteOffset+out.byteLength);
 }
 
+function isAlAhliWalletName(name){
+  const n=String(name||"").normalize("NFKC").replace(/[أإآ]/g,"ا").replace(/\s+/g," ").toLowerCase();
+  return /البيت\s*الاهلي|al[\s_-]*ahli/.test(n);
+}
+function isYellowExcelFill(fill){
+  if(!fill||fill.type!=="pattern")return false;
+  const c=fill.fgColor||fill.bgColor||{};
+  if(c.indexed===6)return true;
+  const rgb=String(c.argb||c.rgb||"").replace(/^#/,"").toUpperCase();
+  if(rgb){const h=rgb.length===8?rgb.slice(-6):rgb;const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return Number.isFinite(r)&&r>=200&&g>=170&&b<=115&&r-g<100;}
+  return false;
+}
+async function findYellowPlateRows(buffer,sheetName,plateCol,sourceRows){
+  const wb=new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  const ws=wb.getWorksheet(sheetName);
+  if(!ws)throw new Error("تعذر مطابقة ورقة المحفظة لقراءة ألوان الخلايا");
+  const yellow=new Set();
+  sourceRows.forEach((excelRow,i)=>{
+    const cell=ws.getRow(excelRow).getCell(plateCol+1);
+    if(isYellowExcelFill(cell.fill))yellow.add(i);
+  });
+  return yellow;
+}
+function addCommissionToType(value,commission){
+  const base=String(value==null?"":value).trim().replace(/\s*[|｜]\s*عمولة\s*[^|｜]*$/i,"").trim();
+  const suffix="عمولة "+String(commission||"").trim();
+  return [base,suffix].filter(Boolean).join(" | ");
+}
+
 $("walf").onchange=async e=>{
   W=[];
   for(const f of e.target.files){
-    let wb;
+    let wb, targetAlAhli=isAlAhliWalletName(f.name), buf;
     try{
-      let buf=await openProtected(await f.arrayBuffer(),f.name);
+      buf=await openProtected(await f.arrayBuffer(),f.name);
       const ro={type:"array",cellStyles:false,cellNF:false,cellHTML:false};
       try{wb=XLSX.read(buf,ro)}
       catch(err){
@@ -276,17 +306,28 @@ $("walf").onchange=async e=>{
       }
       const hasHeader=h>=0&&bestScore>=1;
       const heads=hasHeader?(rows[h]||[]).map(String):Array.from({length:Math.max(0,...rows.map(r=>r.length))},(_,c)=>"عمود "+(c+1));
-      const rawData=(hasHeader?rows.slice(h+1):rows).filter(r=>r.some(x=>String(x).trim()));
+      const rawStart=hasHeader?h+1:0;
+      const rawPairs=rows.slice(rawStart).map((r,k)=>({row:r,excelRow:rawStart+k+1})).filter(x=>x.row.some(v=>String(v).trim()));
+      const rawData=rawPairs.map(x=>x.row);
+      const rawExcelRows=rawPairs.map(x=>x.excelRow);
       const cand=heads.map((t,c)=>/رقم\s*اللوحة|لوحة|plate/i.test(t)?c:-1).filter(c=>c>=0);
       const pi=pickPlateCol(heads,rawData,cand);
       const validCount=pi>=0?rawData.filter(r=>isSaudiPlateValue(r[pi])).length:0;
       const explicitPlateHeader=pi>=0&&cand.includes(pi)?1:0;
       const score=validCount*100+explicitPlateHeader*10000;
-      if(validCount>0&&(!chosen||score>chosen.score))chosen={sheetName,heads,rawData,pi,validCount,score};
+      if(validCount>0&&(!chosen||score>chosen.score))chosen={sheetName,heads,rawData,rawExcelRows,pi,validCount,score};
     }
     if(!chosen){alert("لم يتم العثور على عمود يحتوي لوحات سعودية صحيحة (3 حروف عربية و4 أرقام) في الملف: "+f.name);continue;}
-    const data=chosen.rawData.filter(r=>isSaudiPlateValue(r[chosen.pi]));
-    W.push({name:f.name+" · "+chosen.sheetName,heads:chosen.heads,data,pi:chosen.pi,isWalletUpload:true});
+    const validPairs=chosen.rawData.map((r,k)=>({row:r,excelRow:chosen.rawExcelRows[k]})).filter(x=>isSaudiPlateValue(x.row[chosen.pi]));
+    const data=validPairs.map(x=>x.row);
+    const wallet={name:f.name+" · "+chosen.sheetName,heads:chosen.heads,data,pi:chosen.pi,isWalletUpload:true,isAlAhli:targetAlAhli,_sourceExcelRows:validPairs.map(x=>x.excelRow)};
+    if(targetAlAhli){
+      if(!/\.xlsx$/i.test(f.name)){alert("ميزة تمييز الأصفر لمحفظة البيت الأهلي تحتاج ملف XLSX للحفاظ على ألوان الخلايا. لم تتم إضافة هذه المحفظة.");continue;}
+      try{wallet.yellowRows=await findYellowPlateRows(buf,chosen.sheetName,chosen.pi,validPairs.map(x=>x.excelRow));}
+      catch(styleErr){alert("تعذر قراءة تظليل اللوحات الصفراء في محفظة البيت الأهلي، لذلك لم تتم إضافة الملف لتجنب تحديث غير دقيق.\n"+styleErr.message);continue;}
+      wallet.yellowCount=wallet.yellowRows.size;
+    }
+    W.push(wallet);
   }
   W.forEach(analyze);renderWallets();
   $("walInfo").textContent="تم قراءة: "+W.map(w=>w.name+" ("+w.data.length+" صف)").join("، ");
@@ -439,9 +480,10 @@ function renderWallets(){
     return `<div class="card"><h2>${esc(w.name)}</h2>
 <label class="mut">عمود اللوحة في المحفظة<select data-w="${i}" class="wpc">${sel}</select></label>
 <div>${w.data.length} صف · <span class="ok">موجود: ${w.data.length-w.nf}</span> · <span class="er">غير موجود: ${w.nf}</span></div>
+${w.isAlAhli?`<div class="mut" style="margin-top:6px">اللوحات المميزة بالأصفر: <b>${w.yellowCount||0}</b> لوحة</div>`:""}
 ${cols}${head}${pasteList}${ow}${nameBox}</div>`;
   }).join("");
-  document.querySelectorAll(".wpc").forEach(s=>s.onchange=()=>{const w=W[+s.dataset.w];w.pi=+s.value;analyze(w);renderWallets()});
+  document.querySelectorAll(".wpc").forEach(s=>s.onchange=async()=>{const w=W[+s.dataset.w];w.pi=+s.value;if(w.isAlAhli){try{const f=[...$("walf").files].find(x=>w.name.startsWith(x.name+" ·"));if(f){const b=await openProtected(await f.arrayBuffer(),f.name);const shName=w.name.slice((f.name+" ·").length);const validRows=w.data.map((r,k)=>k);w.yellowRows=await findYellowPlateRows(b,shName,w.pi,w._sourceExcelRows||[]);w.yellowCount=w.yellowRows.size;}}catch(e){alert("تعذر إعادة فحص اللون الأصفر بعد تغيير عمود اللوحة. أعد رفع المحفظة دون تغيير العمود.");return}}analyze(w);renderWallets()});
   document.querySelectorAll(".vb").forEach(b=>b.onclick=()=>{const d=b.nextElementSibling;d.hidden=!d.hidden;b.textContent=d.hidden?"عرض اللوحات":"إخفاء اللوحات"});
   document.querySelectorAll(".del-owner-check").forEach(c=>c.onchange=()=>{const w=W[+c.dataset.w],o=w.owners[+c.dataset.j];if(!w.selectedOwners)w.selectedOwners=new Set();if(c.checked)w.selectedOwners.add(o);else w.selectedOwners.delete(o)});
   const refreshExcludeControls=(wi)=>{
@@ -514,8 +556,16 @@ $("applyBtn").onclick=async()=>{
     }
   }
   const all=[...new Set(W.flatMap(w=>w.del))],dmAll=[...new Set(W.flatMap(w=>w.dm))];
+  for(const w of W.filter(x=>x.isAlAhli&&(x.yellowCount||0)>0&&x.mode!=="del")){
+    const amount=prompt(`تم العثور على ${w.yellowCount} لوحة مميزة بالأصفر في محفظة البيت الأهلي.\nاكتب العمولة التي تريد إضافتها بجانب النوع لكل لوحة صفراء:` , w.commission||"");
+    if(amount===null)return;
+    if(!String(amount).trim()){alert("اكتب قيمة العمولة أو ألغِ العملية. لم يتم تنفيذ أي تغيير.");return;}
+    w.commission=String(amount).trim();
+    const mapped=mapCols(w),typeDest=mapped.findIndex(j=>j===-5)+1;
+    if(typeDest<=0){alert("لم أجد عمود النوع في الشيت الأساسي، لذلك أوقفت التنفيذ حتى لا تضيع العمولة.");return;}
+  }
   const excludedSummary=W.filter(w=>w.excludeOwnersSelected&&w.excludeOwnersSelected.length).map(w=>w.name2+": استبعاد لوحات "+w.excludeOwnersSelected.join("، ")).join("\n");
-  if(!confirm("استبدال (حذف كل الصفوف): "+(all.length?all.join("، "):"لا أحد")+"\nحذف اللوحات المطابقة فقط من الملاك المحددين: "+(dmAll.length?dmAll.join("، "):"لا أحد")+"\n"+(W.filter(w=>w.mode!=="del").map(w=>"إضافة "+w.data.length+" لوحة للمالك: "+w.name2).join("\n")||"بدون إضافة")+(excludedSummary?"\n"+excludedSummary:"")+"\nمتابعة؟"))return;
+  if(!confirm("استبدال (حذف كل الصفوف): "+(all.length?all.join("، "):"لا أحد")+"\nحذف اللوحات المطابقة فقط من الملاك المحددين: "+(dmAll.length?dmAll.join("، "):"لا أحد")+"\n"+(W.filter(w=>w.mode!=="del").map(w=>"إضافة "+w.data.length+" لوحة للمالك: "+w.name2).join("\n")||"بدون إضافة")+(excludedSummary?"\n"+excludedSummary:"")+W.filter(w=>w.isAlAhli&&w.commission).map(w=>"\nالبيت الأهلي: إضافة عمولة "+w.commission+" بجانب النوع لـ "+w.yellowCount+" لوحة صفراء").join("")+"\nمتابعة؟"))return;
   $("applyBtn").disabled=true;log("جاري التنفيذ…");
   await new Promise(r=>setTimeout(r,50));
   if(!S.wb){log("جاري تجهيز الشيت الأساسي… قد يستغرق دقيقة");await new Promise(r=>setTimeout(r,30));const wb=new ExcelJS.Workbook();await wb.xlsx.load(S.bytes);S.wb=wb;S.ws=wb.getWorksheet(S.sheetName)||wb.worksheets[0]}
@@ -581,7 +631,9 @@ $("applyBtn").onclick=async()=>{
       const z=norm(r[w.pi]);if(!z.key)continue;
       if(excludedKeys.has(z.key)){skippedDuplicates++;continue}
       if(ownerKeys.has(z.key)){
-        const suppliedType=w.isPasted?(w.bi>=0?String(r[w.bi]==null?"":r[w.bi]).trim():""):vehicleTypeValue(w,r);
+        let suppliedType=w.isPasted?(w.bi>=0?String(r[w.bi]==null?"":r[w.bi]).trim():""):vehicleTypeValue(w,r);
+        const sourceIndex=w.data.indexOf(r);
+        if(w.isAlAhli&&w.commission&&w.yellowRows&&w.yellowRows.has(sourceIndex))suppliedType=addCommissionToType(suppliedType,w.commission);
         if(suppliedType&&typeDest>0)(ownerRows.get(z.key)||[]).forEach(rr=>{ws.getRow(rr).getCell(typeDest).value=suppliedType});
         skippedDuplicates++;continue;
       }
@@ -590,7 +642,7 @@ $("applyBtn").onclick=async()=>{
       const vals=m.map(j=>{
         if(j===-2)return plate;if(j===-3)return w.name2;
         if(j===-4)return String(r[w.ci]==null?"":r[w.ci]).replace(/\s/g,"").toUpperCase();
-        if(j===-5)return vehicleTypeValue(w,r);
+        if(j===-5){let tv=vehicleTypeValue(w,r);const sourceIndex=w.data.indexOf(r);if(w.isAlAhli&&w.commission&&w.yellowRows&&w.yellowRows.has(sourceIndex))tv=addCommissionToType(tv,w.commission);return tv;}
         if(j<0)return "";
         const v=String(r[j]).trim();
         return /^-?\d{1,12}(\.\d+)?$/.test(v)?Number(v):v;

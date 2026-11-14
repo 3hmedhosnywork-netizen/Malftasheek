@@ -266,9 +266,15 @@ async function findYellowPlateRows(buffer,sheetName,plateCol,sourceRows){
   return yellow;
 }
 function addCommissionToType(value,commission){
+  // القيمة التي يدخلها المستخدم تظهر كما هي قبل نوع السيارة، دون إضافة كلمة "عمولة".
   const base=String(value==null?"":value).trim().replace(/\s*[|｜]\s*عمولة\s*[^|｜]*$/i,"").trim();
-  const suffix="عمولة "+String(commission||"").trim();
-  return [base,suffix].filter(Boolean).join(" | ");
+  const prefix=String(commission==null?"":commission).trim();
+  return [prefix,base].filter(Boolean).join(" ");
+}
+function markYellowTypeCell(cell){
+  const old=cell.font||{};
+  cell.font=Object.assign({},old,{size:8});
+  cell.alignment=Object.assign({},cell.alignment||{},{shrinkToFit:true,vertical:"middle"});
 }
 
 $("walf").onchange=async e=>{
@@ -557,7 +563,7 @@ $("applyBtn").onclick=async()=>{
   }
   const all=[...new Set(W.flatMap(w=>w.del))],dmAll=[...new Set(W.flatMap(w=>w.dm))];
   for(const w of W.filter(x=>x.isAlAhli&&(x.yellowCount||0)>0&&x.mode!=="del")){
-    const amount=prompt(`تم العثور على ${w.yellowCount} لوحة مميزة بالأصفر في محفظة البيت الأهلي.\nاكتب العمولة التي تريد إضافتها بجانب النوع لكل لوحة صفراء:` , w.commission||"");
+    const amount=prompt(`تم العثور على ${w.yellowCount} لوحة مميزة بالأصفر في محفظة البيت الأهلي.\nاكتب النص الذي تريد وضعه قبل نوع السيارة لكل لوحة صفراء:` , w.commission||"");
     if(amount===null)return;
     if(!String(amount).trim()){alert("اكتب قيمة العمولة أو ألغِ العملية. لم يتم تنفيذ أي تغيير.");return;}
     w.commission=String(amount).trim();
@@ -565,7 +571,7 @@ $("applyBtn").onclick=async()=>{
     if(typeDest<=0){alert("لم أجد عمود النوع في الشيت الأساسي، لذلك أوقفت التنفيذ حتى لا تضيع العمولة.");return;}
   }
   const excludedSummary=W.filter(w=>w.excludeOwnersSelected&&w.excludeOwnersSelected.length).map(w=>w.name2+": استبعاد لوحات "+w.excludeOwnersSelected.join("، ")).join("\n");
-  if(!confirm("استبدال (حذف كل الصفوف): "+(all.length?all.join("، "):"لا أحد")+"\nحذف اللوحات المطابقة فقط من الملاك المحددين: "+(dmAll.length?dmAll.join("، "):"لا أحد")+"\n"+(W.filter(w=>w.mode!=="del").map(w=>"إضافة "+w.data.length+" لوحة للمالك: "+w.name2).join("\n")||"بدون إضافة")+(excludedSummary?"\n"+excludedSummary:"")+W.filter(w=>w.isAlAhli&&w.commission).map(w=>"\nالبيت الأهلي: إضافة عمولة "+w.commission+" بجانب النوع لـ "+w.yellowCount+" لوحة صفراء").join("")+"\nمتابعة؟"))return;
+  if(!confirm("استبدال (حذف كل الصفوف): "+(all.length?all.join("، "):"لا أحد")+"\nحذف اللوحات المطابقة فقط من الملاك المحددين: "+(dmAll.length?dmAll.join("، "):"لا أحد")+"\n"+(W.filter(w=>w.mode!=="del").map(w=>"إضافة "+w.data.length+" لوحة للمالك: "+w.name2).join("\n")||"بدون إضافة")+(excludedSummary?"\n"+excludedSummary:"")+W.filter(w=>w.isAlAhli&&w.commission).map(w=>"\nالبيت الأهلي: إضافة القيمة "+w.commission+" قبل النوع لـ "+w.yellowCount+" لوحة صفراء").join("")+"\nمتابعة؟"))return;
   $("applyBtn").disabled=true;log("جاري التنفيذ…");
   await new Promise(r=>setTimeout(r,50));
   if(!S.wb){log("جاري تجهيز الشيت الأساسي… قد يستغرق دقيقة");await new Promise(r=>setTimeout(r,30));const wb=new ExcelJS.Workbook();await wb.xlsx.load(S.bytes);S.wb=wb;S.ws=wb.getWorksheet(S.sheetName)||wb.worksheets[0]}
@@ -634,7 +640,7 @@ $("applyBtn").onclick=async()=>{
         let suppliedType=w.isPasted?(w.bi>=0?String(r[w.bi]==null?"":r[w.bi]).trim():""):vehicleTypeValue(w,r);
         const sourceIndex=w.data.indexOf(r);
         if(w.isAlAhli&&w.commission&&w.yellowRows&&w.yellowRows.has(sourceIndex))suppliedType=addCommissionToType(suppliedType,w.commission);
-        if(suppliedType&&typeDest>0)(ownerRows.get(z.key)||[]).forEach(rr=>{ws.getRow(rr).getCell(typeDest).value=suppliedType});
+        if(suppliedType&&typeDest>0)(ownerRows.get(z.key)||[]).forEach(rr=>{const tc=ws.getRow(rr).getCell(typeDest);tc.value=suppliedType;if(w.isAlAhli&&w.commission&&w.yellowRows&&w.yellowRows.has(sourceIndex))markYellowTypeCell(tc)});
         skippedDuplicates++;continue;
       }
       ownerKeys.add(z.key);
@@ -649,6 +655,7 @@ $("applyBtn").onclick=async()=>{
       });
       const row=ws.addRow(vals);
       tpl.forEach((st,c)=>{row.getCell(c+1).style=st});
+      if(w.isAlAhli&&w.commission&&w.yellowRows&&w.yellowRows.has(w.data.indexOf(r))&&typeDest>0)markYellowTypeCell(row.getCell(typeDest));
       if(!ownerRows.has(z.key))ownerRows.set(z.key,[]);ownerRows.get(z.key).push(row.number);
       added++;
       if(z.L&&z.D&&!RU.has(w.name2))RU.set(w.name2,{o:w.name2,p:plate,k:z.key,n:row.number});
@@ -703,6 +710,9 @@ const DB={open(){return new Promise((res,rej)=>{const q=indexedDB.open("wm",1);q
 async set(k,v){const d=await this.open();return new Promise((res,rej)=>{const t=d.transaction("f","readwrite");t.objectStore("f").put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})},
 async get(k){const d=await this.open();return new Promise((res,rej)=>{const q=d.transaction("f").objectStore("f").get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}};
 function designSheet(wb){
+  // اجعل ورقة البيانات (الثانية) من اليمين إلى اليسار ليظهر العمود الأول (اللوحة) أقصى اليمين.
+  const dataSheet=wb.getWorksheet("بيانات")||wb.worksheets[1];
+  if(dataSheet){const views=Array.isArray(dataSheet.views)?dataSheet.views.slice():[];const v=views[0]||{};views[0]=Object.assign({},v,{rightToLeft:true});dataSheet.views=views;}
   const ws=wb.worksheets[0];
   if(!ws||ws===S.ws)return;
   // مهم: ExcelJS بيشارك نفس كائن الستايل بين خلايا كتير، فنعمل كائن جديد لكل خلية بدل التعديل المباشر

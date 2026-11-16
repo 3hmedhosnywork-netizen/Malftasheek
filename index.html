@@ -279,8 +279,6 @@ function markYellowTypeCell(cell){
 
 $("walf").onchange=async e=>{
   W=[];
-  let savedTypeHeaders=[];
-  try{savedTypeHeaders=await DB.get("vehicleTypeHeaders")||[]}catch(e){}
   for(const f of e.target.files){
     let wb, targetAlAhli=isAlAhliWalletName(f.name), buf;
     try{
@@ -328,7 +326,7 @@ $("walf").onchange=async e=>{
     if(!chosen){alert("لم يتم العثور على عمود يحتوي لوحات سعودية صحيحة (3 حروف عربية و4 أرقام) في الملف: "+f.name);continue;}
     const validPairs=chosen.rawData.map((r,k)=>({row:r,excelRow:chosen.rawExcelRows[k]})).filter(x=>isSaudiPlateValue(x.row[chosen.pi]));
     const data=validPairs.map(x=>x.row);
-    const wallet={name:f.name+" · "+chosen.sheetName,heads:chosen.heads,data,pi:chosen.pi,isWalletUpload:true,isAlAhli:targetAlAhli,_sourceExcelRows:validPairs.map(x=>x.excelRow),savedTypeHeaders};
+    const wallet={name:f.name+" · "+chosen.sheetName,heads:chosen.heads,data,pi:chosen.pi,isWalletUpload:true,isAlAhli:targetAlAhli,_sourceExcelRows:validPairs.map(x=>x.excelRow)};
     if(targetAlAhli){
       if(!/\.xlsx$/i.test(f.name)){alert("ميزة تمييز الأصفر لمحفظة البيت الأهلي تحتاج ملف XLSX للحفاظ على ألوان الخلايا. لم تتم إضافة هذه المحفظة.");continue;}
       try{wallet.yellowRows=await findYellowPlateRows(buf,chosen.sheetName,chosen.pi,validPairs.map(x=>x.excelRow));}
@@ -338,13 +336,12 @@ $("walf").onchange=async e=>{
     W.push(wallet);
   }
   W.forEach(analyze);renderWallets();
-  const learned=[...new Set(W.flatMap(w=>w.learnedTypeHeaders||[]))];
-  if(learned.length){try{await DB.set("vehicleTypeHeaders",[...new Set([...savedTypeHeaders,...learned])])}catch(e){}}
   $("walInfo").textContent="تم قراءة: "+W.map(w=>w.name+" ("+w.data.length+" صف)").join("، ");
 };
 
 function normVehicleText(v){
-  return String(v==null?"":v).toLowerCase().trim().replace(/[أإآ]/g,"ا").replace(/ى/g,"ي").replace(/[ً-ٟـ]/g,"").replace(/[\s_.-]+/g," ").replace(/[^\p{L}\p{N} ]/gu,"").trim();
+  // توحيد اختلافات كتابة العناوين العربية قبل المطابقة (ة/ه، أ/إ/آ، ى/ي).
+  return String(v==null?"":v).toLowerCase().trim().replace(/[أإآ]/g,"ا").replace(/ة/g,"ه").replace(/ى/g,"ي").replace(/[ً-ٟـ]/g,"").replace(/[\s_.-]+/g," ").replace(/[^\p{L}\p{N} ]/gu,"").trim();
 }
 const MAKERS_AR=["فاو","بايك","شانجان","جيتور","هافال","دونج فينج","جي ايه سي","جاك","داتسون","سوزوكي","تويوتا","هونداي","هيونداي","هوندا","نيسان","شيفروليه","شيفورليه","كيا","مازدا","متسوبيشي","ميتسوبيشي","فورد","جمس","جي ام سي","ايسوزو","سوزوكي","لكزس","مرسيدس","بي ام دبليو","ب ام دبليو","اودي","فولكس واجن","فولكسفاجن","رينو","بيجو","سيتروين","سكودا","جيلي","شانجان","ام جي","شيري","جريت وول","دودج","كرايسلر","جيب","انفينيتي","بورش","لاند روفر","جاكوار","سوبارو","دايهاتسو","فيات","اوبل","بنتلي","فولفو","لينكون","كاديلاك","رام"];
 const MAKERS_EN=["faw","baic","changan","jetour","haval","dongfeng","gac","jac","datsun","suzuki","toyota","hyundai","honda","nissan","chevrolet","kia","mazda","mitsubishi","ford","gmc","isuzu","suzuki","lexus","mercedes","bmw","audi","volkswagen","vw","renault","peugeot","citroen","skoda","geely","changan","mg","chery","great wall","dodge","chrysler","jeep","infiniti","porsche","land rover","jaguar","subaru","daihatsu","fiat","opel","bentley","volvo","lincoln","cadillac","ram"];
@@ -371,34 +368,64 @@ function detect(w){
   // Prefer the vehicle's type/model column over generic "type" fields such as certificate type.
   const typeHeaderScore=t=>{
     const h=headerKey(t);if(isNonVehicleHeader(t))return -1;
-    if(/نوعالسيارة|نوعالسياره|نوعالمركبة|نوعالمركبه|طرازالمركبة|طرازالمركبه|vehiclemodel|vehicletype|car_model|carmodel/.test(h))return 12;
+    if(/نوعالمركبه|طرازالمركبه|vehiclemodel|vehicletype|car_model|carmodel/.test(h))return 10;
     if(/^(المركبه|مركبه|السياره|سياره|vehicle|vehicles|car|cars)$/.test(h))return 9;
-    if(/طراز|فئهالمركبه|vehiclevariant/.test(h))return 11;
-    if(/^(النوع|نوع|type|vehicle type|car type)$/.test(h))return 8;
-    if(/model|الموديل/.test(h))return 5;
+    if(/طراز|فئهالمركبه|vehiclevariant/.test(h))return 8;
+    if(/نوع|model|type/.test(h))return 5;
     return -1;
   };
   let bi=-1,bh=-1;
   for(let c=0;c<n;c++)if(![w.pi,ci,yi,makei].includes(c)){const sc=typeHeaderScore(H[c]);if(sc>bh){bh=sc;bi=c}}
   if(bh<0)bi=-1;
-  // لا نستخدم محتوى الصفوف لاختيار عمود النوع؛ اسم العنوان هو المرجع الوحيد.
-  // الأسماء المعروفة تُحفظ في IndexedDB وتُعاد الاستفادة منها في كل تشغيل لاحق.
-  const saved=(w.savedTypeHeaders||[]).map(headerKey);
-  const explicitTypeAliases=/^(?:نوع(?:السيارة|السياره|المركبة|المركبه)?|النوع|طراز(?:السياره|المركبه)?|الطراز|موديل(?:السياره|المركبه)?|الموديل|vehicle(?:type|model)?|car(?:type|model)?|type|model|variant)$/i;
-  let headerOnlyPick={c:-1,s:-1};
-  for(let c=0;c<n;c++)if(![w.pi,ci,yi,makei].includes(c)){
-    const h=headerKey(H[c]);
-    const known=explicitTypeAliases.test(h)||saved.includes(h);
-    if(!known)continue;
-    const score=typeHeaderScore(H[c])>=0?typeHeaderScore(H[c]):7;
-    if(score>headerOnlyPick.s)headerOnlyPick={c,s:score};
+  if(makei<0||bi<0){
+    let bestMake={c:-1,s:0},bestModel={c:-1,s:0};
+    for(let c=0;c<n;c++)if(c!==w.pi&&c!==ci&&c!==yi&&!isNonVehicleHeader(H[c])){
+      const ms=scoreDict(c,MAKER_SET),ts=scoreDict(c,MODEL_SET);
+      if(ms>bestMake.s)bestMake={c,s:ms};if(ts>bestModel.s)bestModel={c,s:ts};
+    }
+    if(makei<0&&bestMake.s>=.12)makei=bestMake.c;
+    if(bi<0&&bestModel.s>=.12)bi=bestModel.c;
   }
-  if(headerOnlyPick.c>=0){bi=headerOnlyPick.c;w.learnedTypeHeaders=[headerKey(H[bi])];}
-  else {bi=-1;w.learnedTypeHeaders=[];}
-  // لا نسمح لعمود الملاحظات أو حالة العقد أن يحل محل النوع بسبب شكل النص داخله.
+  // Final guard: the same source column cannot serve as both manufacturer and vehicle type.
   if(makei===bi)bi=-1;
-  if(assetsi>=0){bi=assetsi;makei=-1;w.learnedTypeHeaders=[headerKey(H[assetsi])];}
-  const confidence=bi>=0?1:0;
+  // Treat known combined fields as one manufacturer/model value.
+  if(assetsi>=0){bi=assetsi;makei=-1;}
+  // Generic content-based fallback: works with unknown brands/models and even blank headers.
+  // Prefer columns whose values look like vehicle descriptions (text + separators and/or a model year),
+  // while excluding plate, VIN, year, owner, and obviously numeric columns.
+  let contentPick={c:-1,s:0};
+  for(let c=0;c<n;c++){
+    if([w.pi,ci,yi].includes(c)||c===makei||isNonVehicleHeader(H[c]))continue;
+    const a=vals(c);if(a.length<Math.max(3,Math.floor(rows.length*.12)))continue;
+    let good=0,nonempty=0;
+    for(const v0 of a){
+      const v=String(v0).trim();if(!v)continue;nonempty++;
+      const hasLetters=/[\p{L}]/u.test(v), hasDigits=/\d/.test(v);
+      const year=/\b(?:19|20)\d{2}\b/.test(v);
+      const separated=/[,،/|؛-]/.test(v);
+      const words=v.split(/[\s,،/|؛-]+/).filter(Boolean);
+      if(hasLetters&&((year&&(separated||words.length>=2))||(separated&&words.length>=2)||(words.length>=2&&hasDigits)))good++;
+    }
+    const score=nonempty?good/nonempty:0;
+    if(score>contentPick.s)contentPick={c,s:score};
+  }
+  // عنوان واضح مثل «طراز المركبة» أو «نوع السيارة» له الأولوية المطلقة؛
+  // لا نسمح لعمود الملاحظات أو الحالة أن يستبدله بسبب تشابه محتوى الخلايا.
+  const hasStrongTypeHeader=bh>=8;
+  let confidence=bi>=0?(hasStrongTypeHeader?1:Math.max(scoreDict(bi,MODEL_SET),scoreDict(bi,MAKER_SET),contentPick.c===bi?contentPick.s:0)):0;
+  if(!hasStrongTypeHeader&&(bi<0||confidence<.38)&&contentPick.s>=.38){bi=contentPick.c;confidence=contentPick.s;}
+  // Strong semantic headers such as "المركبة" or "السيارة" are reliable even when the values are unfamiliar model names.
+  if(bi<0){
+    let best={c:-1,s:-1};
+    for(let c=0;c<n;c++)if(![w.pi,ci,yi,makei].includes(c)){
+      const h=headerKey(H[c]);
+      const hs=/^(المركبه|مركبه|السياره|سياره|vehicle|vehicles|car|cars)$/.test(h)?9:typeHeaderScore(H[c]);
+      if(hs>best.s&&hs>=8)best={c,s:hs};
+    }
+    if(best.c>=0){bi=best.c;confidence=.8;}
+  }
+  // If the detected field is a known combined source, it remains the preferred single field.
+  if(assetsi>=0){bi=assetsi;makei=-1;confidence=1;}
   w.ci=ci;w.yi=yi;w.makei=makei;w.bi=bi;w.mi=-1;w.assetsi=assetsi;w.typeConfidence=confidence;
   w.needsTypeChoice=false;
 }
@@ -702,7 +729,8 @@ function designSheet(wb){
   [[1,33.75],[2,34.5],[3,30]].forEach(([r,h])=>{ws.getRow(r).height=h});
   try{ws._media=[]}catch(e){}
   // صفوف البيانات: نرجّعها للشكل الأصلي (من غير خلفية، ويصلّح أي تلوين قديم اتسرّب)
-  const last=Math.min(ws.rowCount,4999);
+  const FORMULA_FIRST=4, FORMULA_LAST=FORMULA_FIRST+3500-1;
+  const last=Math.min(ws.rowCount,FORMULA_LAST);
   for(let r=4;r<=last;r++){
     for(let c=1;c<=6;c++){
       st(ws.getCell(r,c),Object.assign({font:{name:"Calibri",size:20,bold:true},fill:c===2?solid("FFFFFF00"):none,alignment:{horizontal:"center",vertical:"middle"}},c===2?{numFmt:";;;"}:{}));
@@ -712,7 +740,7 @@ function designSheet(wb){
   let anyFilled=false;
   const RC=S._recent||[];
   RC.forEach((e,i)=>{ws.getCell(4+i,1).value=e.p});
-  for(let r=4;r<=4999;r++){
+  for(let r=FORMULA_FIRST;r<=FORMULA_LAST;r++){
     const rc=RC[r-4];
     const av=ws.getCell(r,1).value,empty=av==null||String(av).trim()==="";
     if(!empty&&!rc)anyFilled=true;
@@ -721,6 +749,10 @@ function designSheet(wb){
     [["C","A",0],["D","B",1],["E","C",2],["F","D",3]].forEach(([L,src,ix])=>{
       put(ws.getCell(L+r),`IF(B${r}="","",INDEX(بيانات!${src}:${src},B${r}))`,rc&&rc.v?rc.v[ix]:undefined);
     });
+  }
+  // إزالة أي معادلات قديمة بعد الصف 3503 حتى لا يبقى الملف محملاً بحسابات إضافية.
+  for(let r=FORMULA_LAST+1;r<=Math.min(ws.rowCount,4999);r++){
+    for(const L of ["B","C","D","E","F"]) ws.getCell(L+r).value=null;
   }
   try{wb.calcProperties=Object.assign({},wb.calcProperties,{calcId:191029,fullCalcOnLoad:anyFilled})}catch(e){}
   // الصف الأول
@@ -747,7 +779,7 @@ function designSheet(wb){
   const CM={C:"FF4CA65E",D:"FF4EACEA",E:"FFFFFF56",F:"FF7030A0"};
   ws.conditionalFormattings=[];
   Object.keys(CM).forEach((L,i)=>{
-    ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="F"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
+    ws.addConditionalFormatting({ref:L+"4:"+L+"3503",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="F"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
   });
 }
 async function fastRestore(){

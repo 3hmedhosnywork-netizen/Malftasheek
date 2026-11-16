@@ -725,7 +725,8 @@ function designSheet(wb){
   [[1,33.75],[2,34.5],[3,30]].forEach(([r,h])=>{ws.getRow(r).height=h});
   try{ws._media=[]}catch(e){}
   // صفوف البيانات: نرجّعها للشكل الأصلي (من غير خلفية، ويصلّح أي تلوين قديم اتسرّب)
-  const last=Math.min(ws.rowCount,4999);
+  const FORMULA_FIRST=4, FORMULA_LAST=FORMULA_FIRST+3500-1;
+  const last=Math.min(ws.rowCount,FORMULA_LAST);
   for(let r=4;r<=last;r++){
     for(let c=1;c<=6;c++){
       st(ws.getCell(r,c),Object.assign({font:{name:"Calibri",size:20,bold:true},fill:c===2?solid("FFFFFF00"):none,alignment:{horizontal:"center",vertical:"middle"}},c===2?{numFmt:";;;"}:{}));
@@ -735,7 +736,7 @@ function designSheet(wb){
   let anyFilled=false;
   const RC=S._recent||[];
   RC.forEach((e,i)=>{ws.getCell(4+i,1).value=e.p});
-  for(let r=4;r<=4999;r++){
+  for(let r=FORMULA_FIRST;r<=FORMULA_LAST;r++){
     const rc=RC[r-4];
     const av=ws.getCell(r,1).value,empty=av==null||String(av).trim()==="";
     if(!empty&&!rc)anyFilled=true;
@@ -744,6 +745,10 @@ function designSheet(wb){
     [["C","A",0],["D","B",1],["E","C",2],["F","D",3]].forEach(([L,src,ix])=>{
       put(ws.getCell(L+r),`IF(B${r}="","",INDEX(بيانات!${src}:${src},B${r}))`,rc&&rc.v?rc.v[ix]:undefined);
     });
+  }
+  // إزالة أي معادلات قديمة بعد الصف 3503 حتى لا يبقى الملف محملاً بحسابات إضافية.
+  for(let r=FORMULA_LAST+1;r<=Math.min(ws.rowCount,4999);r++){
+    for(const L of ["B","C","D","E","F"]) ws.getCell(L+r).value=null;
   }
   try{wb.calcProperties=Object.assign({},wb.calcProperties,{calcId:191029,fullCalcOnLoad:anyFilled})}catch(e){}
   // الصف الأول
@@ -770,7 +775,7 @@ function designSheet(wb){
   const CM={C:"FF4CA65E",D:"FF4EACEA",E:"FFFFFF56",F:"FF7030A0"};
   ws.conditionalFormattings=[];
   Object.keys(CM).forEach((L,i)=>{
-    ws.addConditionalFormatting({ref:L+"4:"+L+"4999",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="F"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
+    ws.addConditionalFormatting({ref:L+"4:"+L+"3503",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="F"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
   });
 }
 async function fastRestore(){

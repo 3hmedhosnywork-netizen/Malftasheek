@@ -1,15 +1,5 @@
-self.addEventListener("install",()=>self.skipWaiting());
-self.addEventListener("activate",e=>e.waitUntil(clients.claim()));
-self.addEventListener("fetch",e=>{
-  const u=new URL(e.request.url);
-  if(e.request.method==="POST"&&u.pathname.endsWith("/share-target")){
-    e.respondWith((async()=>{
-      try{
-        const fd=await e.request.formData(),f=fd.get("file");
-        if(f){const c=await caches.open("shared");
-          await c.put(self.registration.scope+"shared-file",new Response(f,{headers:{"x-name":encodeURIComponent(f.name||"shared.xlsx")}}));}
-      }catch(err){}
-      return Response.redirect(self.registration.scope+"index.html?shared=1",303);
-    })());
-  }
-});
+const CACHE='marsal-sites-rebuild-v5';
+const FILES=['./','./index.html','./style.css','./app.js','./manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png'];
+self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES)).then(()=>self.skipWaiting())));
+self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
+self.addEventListener('fetch',event=>{if(event.request.method!=='GET')return;event.respondWith(caches.match(event.request).then(cached=>cached||fetch(event.request).then(response=>{if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}return response;}).catch(()=>caches.match('./index.html'))));});

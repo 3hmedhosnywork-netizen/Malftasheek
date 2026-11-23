@@ -327,6 +327,7 @@ $("walf").onchange=async e=>{
     const validPairs=chosen.rawData.map((r,k)=>({row:r,excelRow:chosen.rawExcelRows[k]})).filter(x=>isSaudiPlateValue(x.row[chosen.pi]));
     const data=validPairs.map(x=>x.row);
     const wallet={name:f.name+" · "+chosen.sheetName,heads:chosen.heads,data,pi:chosen.pi,isWalletUpload:true,isAlAhli:targetAlAhli,_sourceExcelRows:validPairs.map(x=>x.excelRow)};
+    wallet.certCol=detectRepoColumn(wallet);
     if(targetAlAhli){
       if(!/\.xlsx$/i.test(f.name)){alert("ميزة تمييز الأصفر لمحفظة البيت الأهلي تحتاج ملف XLSX للحفاظ على ألوان الخلايا. لم تتم إضافة هذه المحفظة.");continue;}
       try{wallet.yellowRows=await findYellowPlateRows(buf,chosen.sheetName,chosen.pi,validPairs.map(x=>x.excelRow));}
@@ -537,11 +538,26 @@ ${cols}${head}${pasteList}${ow}${nameBox}</div>`;
   $("applyBox").hidden=!W.length;
 }
 
+function detectRepoColumn(w){
+  let best=-1,count=0;
+  const n=Math.max(w.heads.length,...w.data.map(r=>r.length));
+  for(let c=0;c<n;c++){let k=0;for(const r of w.data)if(/REPO/i.test(String(r[c]??"")))k++;if(k>count){count=k;best=c}}
+  return count?best:-1;
+}
+function ensureCertificateSourceColumn(){
+  const existing=S.heads.findIndex(h=>/رقم\s*الشهادة|certificate\s*(id|number)?/i.test(String(h||"")));
+  if(existing>=0){S.certDest=existing+1;return}
+  const ws=S.ws,headerRow=ws.getRow(S.h),lastCol=S.heads.length+1,srcCol=Math.max(1,S.heads.length);
+  for(let r=1;r<=Math.max(ws.rowCount,S.h);r++){const src=ws.getRow(r).getCell(srcCol),dst=ws.getRow(r).getCell(lastCol);if(src.style)dst.style=JSON.parse(JSON.stringify(src.style));dst.value=null}
+  headerRow.getCell(lastCol).value="رقم الشهادة";headerRow.getCell(lastCol).style=JSON.parse(JSON.stringify(headerRow.getCell(srcCol).style||{}));
+  ws.getColumn(lastCol).width=26;S.heads=[...S.heads,"رقم الشهادة"];S.certDest=lastCol;
+}
 function mapCols(w){
   const nh=s=>String(s).replace(/\s+/g,"").toLowerCase(),wh=w.heads.map(nh),m=[];
   S.heads.forEach((H,c)=>{
     const h=nh(H);let j=-1;
     if(c+1===S.pc)j=-2;else if(c+1===S.oc)j=-3;
+    else if(c+1===S.certDest||/رقم\s*الشهادة|certificate\s*(id|number)?/i.test(String(H||"")))j=-6;
     else if(RX_C.test(H)&&w.ci>=0)j=-4;
     else if(/^(ال)?نوع(السيارة|المركبة)?$/.test(h)&&(w.makei>=0||w.bi>=0||w.mi>=0||w.yi>=0))j=-5;
     else{
@@ -579,6 +595,7 @@ $("applyBtn").onclick=async()=>{
   $("applyBtn").disabled=true;log("جاري التنفيذ…");
   await new Promise(r=>setTimeout(r,50));
   if(!S.wb){log("جاري تجهيز الشيت الأساسي… قد يستغرق دقيقة");await new Promise(r=>setTimeout(r,30));const wb=new ExcelJS.Workbook();await wb.xlsx.load(S.bytes);S.wb=wb;S.ws=wb.getWorksheet(S.sheetName)||wb.worksheets[0]}
+  ensureCertificateSourceColumn();
   const ws=S.ws,dels=new Set();
   all.forEach(o=>(S.byOwner.get(o)||[]).forEach(r=>dels.add(r)));
   W.forEach(w=>w.dm.forEach(o=>{const ks=w.found.get(o);(S.byOwner.get(o)||[]).forEach(r=>{if(ks&&ks.has(norm(ctext(ws.getRow(r).getCell(S.pc))).key))dels.add(r)})}));
@@ -645,6 +662,7 @@ $("applyBtn").onclick=async()=>{
         const sourceIndex=w.data.indexOf(r);
         if(w.isAlAhli&&w.commission&&w.yellowRows&&w.yellowRows.has(sourceIndex))suppliedType=addCommissionToType(suppliedType,w.commission);
         if(suppliedType&&typeDest>0)(ownerRows.get(z.key)||[]).forEach(rr=>{const tc=ws.getRow(rr).getCell(typeDest);tc.value=suppliedType;if(w.isAlAhli&&w.commission&&w.yellowRows&&w.yellowRows.has(sourceIndex))markYellowTypeCell(tc)});
+        const certVal=w.certCol>=0?String(r[w.certCol]??"").trim():"";if(certVal&&/REPO/i.test(certVal))(ownerRows.get(z.key)||[]).forEach(rr=>{ws.getRow(rr).getCell(S.certDest).value=certVal});
         skippedDuplicates++;continue;
       }
       ownerKeys.add(z.key);
@@ -653,6 +671,7 @@ $("applyBtn").onclick=async()=>{
         if(j===-2)return plate;if(j===-3)return w.name2;
         if(j===-4)return String(r[w.ci]==null?"":r[w.ci]).replace(/\s/g,"").toUpperCase();
         if(j===-5){let tv=vehicleTypeValue(w,r);const sourceIndex=w.data.indexOf(r);if(w.isAlAhli&&w.commission&&w.yellowRows&&w.yellowRows.has(sourceIndex))tv=addCommissionToType(tv,w.commission);return tv;}
+        if(j===-6){const v=w.certCol>=0?String(r[w.certCol]??"").trim():"";return /REPO/i.test(v)?v:"";}
         if(j<0)return "";
         const v=String(r[j]).trim();
         return /^-?\d{1,12}(\.\d+)?$/.test(v)?Number(v):v;

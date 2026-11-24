@@ -544,6 +544,26 @@ function detectRepoColumn(w){
   for(let c=0;c<n;c++){let k=0;for(const r of w.data)if(/REPO/i.test(String(r[c]??"")))k++;if(k>count){count=k;best=c}}
   return count?best:-1;
 }
+function removeTwoEmptyColsBeforeCertificate(wb){
+  // In the second (data) worksheet, remove only the two fully empty columns
+  // immediately before a certificate header. Abort safely if either column has content.
+  const ws=wb.getWorksheet("بيانات")||wb.worksheets[1];
+  if(!ws)return 0;
+  let certCol=-1,headerRow=-1;
+  const maxR=Math.min(Math.max(ws.rowCount,1),30),maxC=Math.min(Math.max(ws.columnCount,1),250);
+  for(let r=1;r<=maxR&&certCol<0;r++)for(let c=1;c<=maxC;c++){
+    const v=String(ws.getRow(r).getCell(c).value??"");
+    if(/رقم\s*الشهادة|certificate\s*(id|number)?/i.test(v)){certCol=c;headerRow=r;break;}
+  }
+  if(certCol<3)return 0;
+  const isEmptyColumn=c=>{for(let r=1;r<=ws.rowCount;r++){const v=ws.getRow(r).getCell(c).value;if(v!==null&&v!==undefined&&String(v).trim()!=="")return false;}return true;};
+  let removed=0;
+  while(removed<2&&certCol-1>=1&&isEmptyColumn(certCol-1)){
+    ws.spliceColumns(certCol-1,1);
+    certCol--;removed++;
+  }
+  return removed;
+}
 function ensureCertificateSourceColumn(){
   const existing=S.heads.findIndex(h=>/رقم\s*الشهادة|certificate\s*(id|number)?/i.test(String(h||"")));
   if(existing>=0){S.certDest=existing+1;return}
@@ -595,6 +615,7 @@ $("applyBtn").onclick=async()=>{
   $("applyBtn").disabled=true;log("جاري التنفيذ…");
   await new Promise(r=>setTimeout(r,50));
   if(!S.wb){log("جاري تجهيز الشيت الأساسي… قد يستغرق دقيقة");await new Promise(r=>setTimeout(r,30));const wb=new ExcelJS.Workbook();await wb.xlsx.load(S.bytes);S.wb=wb;S.ws=wb.getWorksheet(S.sheetName)||wb.worksheets[0]}
+  removeTwoEmptyColsBeforeCertificate(S.wb);
   ensureCertificateSourceColumn();
   const ws=S.ws,dels=new Set();
   all.forEach(o=>(S.byOwner.get(o)||[]).forEach(r=>dels.add(r)));
@@ -698,7 +719,6 @@ $("applyBtn").onclick=async()=>{
     S.wb.keywords="RZ:"+JSON.stringify(recent.map(e=>({o:e.o,p:e.p,k:e.k})));
   }catch(e){console.error(e);S._recent=[]}
   try{designSheet(S.wb)}catch(e){console.error(e)}
-  try{applyRequestedSheetCleanup(S.wb)}catch(e){console.error("تعذر تنفيذ حذف الأعمدة المطلوب:",e)}
   try{
     S.out=new Uint8Array(await S.wb.xlsx.writeBuffer());S.bytes=S.out;S.fileName="النسخة المحدثة بعد التنفيذ";
     log("تم. حُذف "+rs.length+" صف، وأُضيف "+added+" صف، وتم تخطي "+skippedDuplicates+" لوحة مكررة عند نفس المالك.\n"+(S._verify||[]).join("\n")+(S._fixed?"\nتصحيح "+S._fixed+" لوحة إنجليزي إلى حروف عربي في الأساسي":"")+"\nراجع الملف قبل الاعتماد، خصوصاً الأعمدة التي بها معادلات.");
@@ -733,72 +753,31 @@ $("saveBtn").onclick=async()=>{
 const DB={open(){return new Promise((res,rej)=>{const q=indexedDB.open("wm",1);q.onupgradeneeded=()=>q.result.createObjectStore("f");q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})},
 async set(k,v){const d=await this.open();return new Promise((res,rej)=>{const t=d.transaction("f","readwrite");t.objectStore("f").put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})},
 async get(k){const d=await this.open();return new Promise((res,rej)=>{const q=d.transaction("f").objectStore("f").get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}};
-function adjustFormulaForColumnDelete(formula, deletedCol){
-  const toNum=letters=>letters.split("").reduce((n,ch)=>n*26+ch.charCodeAt(0)-64,0);
-  const toLetters=n=>{let out="";while(n>0){n--;out=String.fromCharCode(65+n%26)+out;n=Math.floor(n/26)}return out};
-  const transform=part=>part.replace(/(\$?)([A-Z]{1,3})(\$?)(\d+)/g,(m,a,col,b,row)=>{
-    const n=toNum(col);if(n===deletedCol)return "#REF!";return a+toLetters(n>deletedCol?n-1:n)+b+row;
-  });
-  return String(formula).replace(/"(?:[^"]|"")*"/g,lit=>lit).split(/("(?:[^"]|"")*")/).map((part,i)=>i%2?part:transform(part)).join("");
-}
-function deleteWorkbookColumnSafely(wb, ws, colIndex){
-  // Adjust formula references before removing the column so formulas keep pointing at the same data.
-  wb.worksheets.forEach(sheet=>{
-    sheet.eachRow({includeEmpty:true},row=>row.eachCell({includeEmpty:true},cell=>{
-      if(cell.type===ExcelJS.ValueType.Formula && cell.value && cell.value.formula){
-        cell.value.formula=adjustFormulaForColumnDelete(cell.value.formula,colIndex);
-      }else if(typeof cell.value==="string" && cell.value.startsWith("=")){
-        cell.value=adjustFormulaForColumnDelete(cell.value,colIndex);
-      }
-    }));
-  });
-  ws.spliceColumns(colIndex,1);
-}
-function applyRequestedSheetCleanup(wb){
-  const first=wb.worksheets[0];
-  if(first && first.columnCount>=2) deleteWorkbookColumnSafely(wb,first,2);
-  const data=wb.getWorksheet("بيانات")||wb.worksheets[1];
-  if(!data)return;
-  const certCol=data.getRow(1).values.findIndex(v=>/رقم\s*الشهادة|certificate\s*(id|number)?/i.test(String(v||"")));
-  if(certCol<0)return;
-  // Remove only truly blank columns directly preceding the certificate column.
-  let col=certCol; // values array is 1-based; findIndex returns the matching 0-based index
-  while(col>1){
-    const candidate=col-1;
-    let blank=true;
-    for(let r=1;r<=data.rowCount;r++){
-      const v=data.getRow(r).getCell(candidate).value;
-      if(v!==null&&v!==undefined&&String(v).trim()!==""){blank=false;break;}
-    }
-    if(!blank)break;
-    deleteWorkbookColumnSafely(wb,data,candidate);
-    col--;
-  }
-}
 function designSheet(wb){
-  // اجعل ورقة البيانات (الثانية) من اليمين إلى اليسار ليظهر العمود الأول (اللوحة) أقصى اليمين.
+  // Keep the data sheet RTL for Arabic display.
   const dataSheet=wb.getWorksheet("بيانات")||wb.worksheets[1];
   if(dataSheet){const views=Array.isArray(dataSheet.views)?dataSheet.views.slice():[];const v=views[0]||{};views[0]=Object.assign({},v,{rightToLeft:true});dataSheet.views=views;}
   const ws=wb.worksheets[0];
   if(!ws||ws===S.ws)return;
-  // مهم: ExcelJS بيشارك نفس كائن الستايل بين خلايا كتير، فنعمل كائن جديد لكل خلية بدل التعديل المباشر
   const st=(c,patch)=>{c.style=Object.assign({},c.style,patch)};
   const solid=a=>({type:"pattern",pattern:"solid",fgColor:{argb:a},bgColor:{argb:a}});
   const none={type:"pattern",pattern:"none"};
   try{ws.name="تشييك"}catch(e){}
-  const CW={A:20.2,B:0.6,C:16.8,D:34.1,E:32.7,F:39.8};
+  // Visible columns A:E only; F is the hidden single-MATCH helper.
+  const CW={A:20.2,B:16.8,C:34.1,D:32.7,E:39.8,F:0.6};
   Object.keys(CW).forEach(k=>{ws.getColumn(k).width=CW[k]});
+  try{ws.getColumn("F").hidden=true}catch(e){}
   [[1,33.75],[2,34.5],[3,30]].forEach(([r,h])=>{ws.getRow(r).height=h});
   try{ws._media=[]}catch(e){}
-  // صفوف البيانات: نرجّعها للشكل الأصلي (من غير خلفية، ويصلّح أي تلوين قديم اتسرّب)
   const FORMULA_FIRST=4, FORMULA_LAST=FORMULA_FIRST+3500-1;
   const last=Math.min(ws.rowCount,FORMULA_LAST);
   for(let r=4;r<=last;r++){
-    for(let c=1;c<=6;c++){
-      st(ws.getCell(r,c),Object.assign({font:{name:"Calibri",size:20,bold:true},fill:c===2?solid("FFFFFF00"):none,alignment:{horizontal:"center",vertical:"middle"}},c===2?{numFmt:";;;"}:{}));
+    for(let c=1;c<=5;c++){
+      st(ws.getCell(r,c),{font:{name:"Calibri",size:20,bold:true},fill:none,alignment:{horizontal:"center",vertical:"middle"}});
     }
+    st(ws.getCell("F"+r),{font:{name:"Calibri",size:20,bold:true},fill:none,alignment:{horizontal:"center",vertical:"middle"},numFmt:";;;"});
   }
-  // معادلات أسرع: بحث واحد لكل لوحة (عمود B المخفي) والباقي INDEX، والصفوف الفاضية بتتخطى
+  // Helper MATCH moved to hidden F. No visible B helper column; dependent formulas remain intact.
   let anyFilled=false;
   const RC=S._recent||[];
   RC.forEach((e,i)=>{ws.getCell(4+i,1).value=e.p});
@@ -807,43 +786,32 @@ function designSheet(wb){
     const av=ws.getCell(r,1).value,empty=av==null||String(av).trim()==="";
     if(!empty&&!rc)anyFilled=true;
     const put=(c,f,res)=>{const old=c.value;c.value={formula:f,result:empty?"":(res!==undefined?res:(old&&old.result!==undefined?old.result:""))}};
-    put(ws.getCell("B"+r),`IF(A${r}="","",IFERROR(MATCH(A${r},بيانات!A:A,0),""))`,rc?rc.n:"");
-    [["C","A",0],["D","B",1],["E","C",2],["F","D",3]].forEach(([L,src,ix])=>{
-      put(ws.getCell(L+r),`IF(B${r}="","",INDEX(بيانات!${src}:${src},B${r}))`,rc&&rc.v?rc.v[ix]:undefined);
+    put(ws.getCell("F"+r),`IF(A${r}="","",IFERROR(MATCH(A${r},بيانات!A:A,0),""))`,rc?rc.n:"");
+    [["B","A",0],["C","B",1],["D","C",2],["E","D",3]].forEach(([L,src,ix])=>{
+      put(ws.getCell(L+r),`IF(F${r}="","",INDEX(بيانات!${src}:${src},F${r}))`,rc&&rc.v?rc.v[ix]:undefined);
     });
   }
-  // إزالة أي معادلات قديمة بعد الصف 3503 حتى لا يبقى الملف محملاً بحسابات إضافية.
   for(let r=FORMULA_LAST+1;r<=Math.min(ws.rowCount,4999);r++){
     for(const L of ["B","C","D","E","F"]) ws.getCell(L+r).value=null;
   }
   try{wb.calcProperties=Object.assign({},wb.calcProperties,{calcId:191029,fullCalcOnLoad:anyFilled})}catch(e){}
-  // الصف الأول
-  try{if(!ws.getCell("A1").isMerged)ws.mergeCells("A1:F1")}catch(e){}
-  const a1=ws.getCell("A1");
-  a1.value="Rasd Zaki";
+  try{if(!ws.getCell("A1").isMerged)ws.mergeCells("A1:E1")}catch(e){}
+  const a1=ws.getCell("A1");a1.value="Rasd Zaki";
   st(a1,{font:{name:"Arial",size:20,bold:true,color:{argb:"FFFFFFFF"}},fill:solid("FF0070C0"),alignment:{horizontal:"center",vertical:"middle"}});
-  // صف العناوين
-  const HF={A:"FF335324",B:"FFFFFF00",C:"FF4CA65E",D:"FF4EACEA",E:"FFFFFF56",F:"FF7030A0"};
-  const HFC={A:"FFFFFFFF",B:"FF000000",C:"FF000000",D:"FF000000",E:"FF000000",F:"FFFFFFFF"};
-  Object.keys(HF).forEach(k=>{
-    const c=ws.getCell(k+"2");
-    st(c,{fill:solid(HF[k]),font:Object.assign({},c.font,{name:"Abadi",size:k==="D"?20:24,color:{argb:HFC[k]}})});
-  });
-  // صف "صل على محمد": 3 مرات جنب بعض على لون وردي غامق
+  const HF={A:"FF335324",B:"FF4CA65E",C:"FF4EACEA",D:"FFFFFF56",E:"FF7030A0"};
+  const HFC={A:"FFFFFFFF",B:"FF000000",C:"FF000000",D:"FF000000",E:"FFFFFFFF"};
+  Object.keys(HF).forEach(k=>{const c=ws.getCell(k+"2");st(c,{fill:solid(HF[k]),font:Object.assign({},c.font,{name:"Abadi",size:k==="C"?20:24,color:{argb:HFC[k]}})});});
   const ROSE="FFC2185B";
   try{ws.unMergeCells("A3:F3")}catch(e){}
   for(let c=1;c<=6;c++){const x=ws.getCell(3,c);x.value=null;st(x,{fill:solid(ROSE)})}
-  const a3=ws.getCell("A3");
-  a3.value="صل على محمد        صل على محمد        صل على محمد";
+  const a3=ws.getCell("A3");a3.value="صل على محمد        صل على محمد        صل على محمد";
   st(a3,{font:{name:"Calibri",size:22,bold:true,italic:true,color:{argb:"FFFFFFFF"}},fill:solid(ROSE),alignment:{horizontal:"center",vertical:"middle"}});
-  try{ws.mergeCells("A3:F3")}catch(e){}
-  // ألوان اللوحة لما تنور (قاعدة بسيطة لكل عمود)
-  const CM={C:"FF4CA65E",D:"FF4EACEA",E:"FFFFFF56",F:"FF7030A0"};
+  try{ws.mergeCells("A3:E3")}catch(e){}
+  const CM={B:"FF4CA65E",C:"FF4EACEA",D:"FFFFFF56",E:"FF7030A0"};
   ws.conditionalFormattings=[];
-  Object.keys(CM).forEach((L,i)=>{
-    ws.addConditionalFormatting({ref:L+"4:"+L+"3503",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="F"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});
-  });
+  Object.keys(CM).forEach((L,i)=>{ws.addConditionalFormatting({ref:L+"4:"+L+"3503",rules:[{type:"expression",priority:i+1,formulae:[L+'4<>""'],style:Object.assign({fill:{type:"pattern",pattern:"solid",bgColor:{argb:CM[L]}}},L==="E"?{font:{color:{argb:"FFFFFFFF"}}}:{})}]});});
 }
+
 async function fastRestore(){
   const [b,ix]=await Promise.all([DB.get("main"),DB.get("index")]);
   if(!b||!ix||!ix.dump||ix.v!==5)return false;

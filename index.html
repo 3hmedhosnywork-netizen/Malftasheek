@@ -698,6 +698,7 @@ $("applyBtn").onclick=async()=>{
     S.wb.keywords="RZ:"+JSON.stringify(recent.map(e=>({o:e.o,p:e.p,k:e.k})));
   }catch(e){console.error(e);S._recent=[]}
   try{designSheet(S.wb)}catch(e){console.error(e)}
+  try{applyRequestedSheetCleanup(S.wb)}catch(e){console.error("تعذر تنفيذ حذف الأعمدة المطلوب:",e)}
   try{
     S.out=new Uint8Array(await S.wb.xlsx.writeBuffer());S.bytes=S.out;S.fileName="النسخة المحدثة بعد التنفيذ";
     log("تم. حُذف "+rs.length+" صف، وأُضيف "+added+" صف، وتم تخطي "+skippedDuplicates+" لوحة مكررة عند نفس المالك.\n"+(S._verify||[]).join("\n")+(S._fixed?"\nتصحيح "+S._fixed+" لوحة إنجليزي إلى حروف عربي في الأساسي":"")+"\nراجع الملف قبل الاعتماد، خصوصاً الأعمدة التي بها معادلات.");
@@ -732,6 +733,48 @@ $("saveBtn").onclick=async()=>{
 const DB={open(){return new Promise((res,rej)=>{const q=indexedDB.open("wm",1);q.onupgradeneeded=()=>q.result.createObjectStore("f");q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})},
 async set(k,v){const d=await this.open();return new Promise((res,rej)=>{const t=d.transaction("f","readwrite");t.objectStore("f").put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})},
 async get(k){const d=await this.open();return new Promise((res,rej)=>{const q=d.transaction("f").objectStore("f").get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}};
+function adjustFormulaForColumnDelete(formula, deletedCol){
+  const toNum=letters=>letters.split("").reduce((n,ch)=>n*26+ch.charCodeAt(0)-64,0);
+  const toLetters=n=>{let out="";while(n>0){n--;out=String.fromCharCode(65+n%26)+out;n=Math.floor(n/26)}return out};
+  const transform=part=>part.replace(/(\$?)([A-Z]{1,3})(\$?)(\d+)/g,(m,a,col,b,row)=>{
+    const n=toNum(col);if(n===deletedCol)return "#REF!";return a+toLetters(n>deletedCol?n-1:n)+b+row;
+  });
+  return String(formula).replace(/"(?:[^"]|"")*"/g,lit=>lit).split(/("(?:[^"]|"")*")/).map((part,i)=>i%2?part:transform(part)).join("");
+}
+function deleteWorkbookColumnSafely(wb, ws, colIndex){
+  // Adjust formula references before removing the column so formulas keep pointing at the same data.
+  wb.worksheets.forEach(sheet=>{
+    sheet.eachRow({includeEmpty:true},row=>row.eachCell({includeEmpty:true},cell=>{
+      if(cell.type===ExcelJS.ValueType.Formula && cell.value && cell.value.formula){
+        cell.value.formula=adjustFormulaForColumnDelete(cell.value.formula,colIndex);
+      }else if(typeof cell.value==="string" && cell.value.startsWith("=")){
+        cell.value=adjustFormulaForColumnDelete(cell.value,colIndex);
+      }
+    }));
+  });
+  ws.spliceColumns(colIndex,1);
+}
+function applyRequestedSheetCleanup(wb){
+  const first=wb.worksheets[0];
+  if(first && first.columnCount>=2) deleteWorkbookColumnSafely(wb,first,2);
+  const data=wb.getWorksheet("بيانات")||wb.worksheets[1];
+  if(!data)return;
+  const certCol=data.getRow(1).values.findIndex(v=>/رقم\s*الشهادة|certificate\s*(id|number)?/i.test(String(v||"")));
+  if(certCol<0)return;
+  // Remove only truly blank columns directly preceding the certificate column.
+  let col=certCol; // values array is 1-based; findIndex returns the matching 0-based index
+  while(col>1){
+    const candidate=col-1;
+    let blank=true;
+    for(let r=1;r<=data.rowCount;r++){
+      const v=data.getRow(r).getCell(candidate).value;
+      if(v!==null&&v!==undefined&&String(v).trim()!==""){blank=false;break;}
+    }
+    if(!blank)break;
+    deleteWorkbookColumnSafely(wb,data,candidate);
+    col--;
+  }
+}
 function designSheet(wb){
   // اجعل ورقة البيانات (الثانية) من اليمين إلى اليسار ليظهر العمود الأول (اللوحة) أقصى اليمين.
   const dataSheet=wb.getWorksheet("بيانات")||wb.worksheets[1];

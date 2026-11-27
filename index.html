@@ -703,18 +703,32 @@ $("applyBtn").onclick=async()=>{
       if(w.isAlAhli&&w.commission&&w.yellowRows&&w.yellowRows.has(w.data.indexOf(r))&&typeDest>0)markYellowTypeCell(row.getCell(typeDest));
       if(!ownerRows.has(z.key))ownerRows.set(z.key,[]);ownerRows.get(z.key).push(row.number);
       added++;
-      if(z.L&&z.D&&!RU.has(w.name2))RU.set(w.name2,{o:w.name2,p:plate,k:z.key,n:row.number});
+      // V28: Recent wallet selection is handled after processing each wallet, not only newly-added plates.
     }
   }
-  // آخر 3 ملاك اتحدّثوا: لوحة من كل واحد تتكتب في أول الصفحة الأولى علشان تنوّر
+  // V28: Track the last three UPDATED wallets; each contributes its last plate from its wallet data.
   try{
     let prevR=[];try{const mm=/^RZ:([\s\S]*)$/.exec(S.wb.keywords||"");if(mm)prevR=JSON.parse(mm[1])}catch(e){}
     const gone=e=>all.includes(e.o)||(dmAll.includes(e.o)&&W.some(w=>{const f=w.found.get(e.o);return f&&f.has(e.k)}));
-    const cur=[...RU.values()].reverse(),names=new Set(cur.map(e=>e.o));
+    const current=[];
+    for(const w of W){
+      if(w.mode==="del")continue;
+      // Find last valid normalized plate in this wallet, then locate its row under this wallet owner in the main data sheet.
+      let candidate=null;
+      for(let i=w.data.length-1;i>=0;i--){const z=norm(w.data[i][w.pi]);if(z.key){candidate={p:z.L+z.D,k:z.key};break}}
+      if(!candidate)continue;
+      let rowNum=0;
+      for(let r=S.h+1;r<=ws.rowCount;r++){
+        const rw=ws.getRow(r),owner=ctext(rw.getCell(S.oc)),key=norm(ctext(rw.getCell(S.pc))).key;
+        if(owner===w.name2&&key===candidate.k){rowNum=r;break}
+      }
+      if(rowNum)current.unshift({o:w.name2,p:candidate.p,k:candidate.k,n:rowNum});
+    }
+    const names=new Set(current.map(e=>e.o));
     const keep=prevR.filter(e=>e&&e.o&&e.k&&!names.has(e.o)&&!gone(e));
     const need=new Map(keep.map(e=>[e.k,e]));
     for(let r=S.h+1;r<=ws.rowCount&&need.size;r++){const k=norm(ctext(ws.getRow(r).getCell(S.pc))).key;const e=need.get(k);if(e){e.n=r;need.delete(k)}}
-    const recent=[...cur,...keep].filter(e=>e.n).slice(0,3);
+    const recent=[...current,...keep].filter(e=>e.n).slice(0,3);
     recent.forEach(e=>{const rw=ws.getRow(e.n);e.v=[1,2,3,4].map(c=>{const v=rw.getCell(c).value;return v==null?"":String(v&&typeof v==="object"&&v.text?v.text:v)})});
     S._recent=recent;
     S.wb.keywords="RZ:"+JSON.stringify(recent.map(e=>({o:e.o,p:e.p,k:e.k})));

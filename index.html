@@ -733,8 +733,9 @@ $("applyBtn").onclick=async()=>{
     S._recent=recent;
     S.wb.keywords="RZ:"+JSON.stringify(recent.map(e=>({o:e.o,p:e.p,k:e.k})));
   }catch(e){console.error(e);S._recent=[]}
-  // V27: Do not apply cosmetic/design changes to other workbook sheets.
-  // Preserve the uploaded workbook layout; wallet processing updates only S.ws data.
+  // V29: Apply the recent-wallet formulas to the check sheet before exporting.
+  // The function existed in prior builds but was not invoked after wallet processing.
+  try{designSheet(S.wb)}catch(e){console.error("تعذر تحديث ورقة التشييك",e)}
 
   try{
     S.out=new Uint8Array(await S.wb.xlsx.writeBuffer());S.bytes=S.out;S.fileName="النسخة المحدثة بعد التنفيذ";

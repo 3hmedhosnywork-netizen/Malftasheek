@@ -333,6 +333,8 @@ $("walf").onchange=async e=>{
     const headerRe=/(?:لوحة|رقم\s*اللوحة|plate|owner|مالك|اسم\s*المالك|manufacturer|astassets|مصنع|صانع\s*المركبة|نوع\s*السيارة|نوع\s*المركبة|model|موديل|year|سنة\s*الصنع|chassis|vin|هيكل)/i;
     let chosen=null;
     for(const sheetName of wb.SheetNames){
+      const sheetMeta=(wb.Workbook&&wb.Workbook.Sheets||[]).find(x=>x.name===sheetName);
+      if(sheetMeta&&Number(sheetMeta.Hidden||0)>0)continue; // V33: never read hidden/very-hidden sheets in wallet uploads
       const sh=wb.Sheets[sheetName];let mr=0,mc=0;
       for(const k in sh){if(k[0]==="!")continue;const a=XLSX.utils.decode_cell(k);if(a.r>mr)mr=a.r;if(a.c>mc)mc=a.c}
       if(!mr&&!mc)continue;
@@ -802,7 +804,7 @@ async function persistOwnerManagerChange(){
   buildIndex();
   // Wait for the owner index write as well; otherwise a refresh can restore stale owner names/counts.
   await DB.set("index",{pc:S.pc,oc:S.oc,h:S.h,heads:S.heads,sheetName:S.sheetName,ar:S.ar,dump:S.dump,name:S.fileName,at:Date.now(),v:5});
-  const check=await DB.get("main");if(!check||check.byteLength!==S.out.byteLength)throw new Error("تعذر التحقق من حفظ الشيت في التخزين المحلي");
+  const check=await DB.get("main");if(!check||check.byteLength!==S.out.byteLength)throw new Error("تعذر التحقق من حفظ الشيت في التخزين المحلي");const checkIndex=await DB.get("index");if(!checkIndex||!checkIndex.dump||checkIndex.dump.length!==S.dump.length)throw new Error("تعذر التحقق من حفظ فهرس الملاك");
   renderWallets();$("dlBtn").hidden=false;
   $("mainInfo").innerHTML='<span class="ok">تم حفظ التحديث محليًا والتحقق منه · '+S.byOwner.size+' مالك</span>';
   renderOwnerManager();
@@ -816,24 +818,20 @@ async function renameOwner(oldName){
   catch(e){alert("تعذر تعديل الاسم: "+e.message)}
 }
 async function deleteOwnerRows(owner){
-  const rows=(S&&S.byOwner&&S.byOwner.get(owner)||[]).slice().sort((a,b)=>a-b);
-  if(!rows.length){alert("لم يتم العثور على صفوف لهذا المالك.");return}
-  if(!confirm("تأكيد الحذف النهائي؟\n\nالمالك: "+owner+"\nعدد الصفوف التي سيتم حذفها: "+rows.length+"\n\nسيتم حذف كل الصفوف الخاصة بهذا المالك (كل اللوحات والبيانات في الصفوف)، ولا يمكن التراجع من داخل التطبيق."))return;
-  try{
-    const ws=await ownerManagerWorkbook();
-    // Collapse contiguous row ranges and remove them from bottom to top so row indexes stay valid.
-    const groups=[];let start=rows[0],prev=rows[0];
-    for(let i=1;i<rows.length;i++){if(rows[i]===prev+1){prev=rows[i];continue}groups.push([start,prev-start+1]);start=prev=rows[i]}
-    groups.push([start,prev-start+1]);groups.reverse().forEach(([r,n])=>ws.spliceRows(r,n));
-    ownerBulkSelected.delete(owner);
-    await persistOwnerManagerChange();$("ownerManageStatus").textContent="تم حذف "+rows.length+" صف للمالك: "+owner;
-  }catch(e){alert("تعذر حذف المالك: "+e.message)}
+  if(!S||!S.ws){alert("حمّل الشيت الأساسي أولاً.");return}
+  const ws=await ownerManagerWorkbook();
+  const actual=[];for(let r=S.h+1;r<=ws.rowCount;r++){if(ctext(ws.getRow(r).getCell(S.oc))===owner)actual.push(r)}
+  if(!actual.length){alert("لم يتم العثور على صفوف لهذا المالك.");return}
+  if(!confirm("تأكيد الحذف النهائي؟\n\nالمالك: "+owner+"\nعدد الصفوف التي سيتم حذفها: "+actual.length+"\n\nسيتم حذف كل الصفوف الخاصة بهذا المالك (كل اللوحات والبيانات في الصفوف)."))return;
+  try{for(let i=actual.length-1;i>=0;i--)ws.spliceRows(actual[i],1);ownerBulkSelected.delete(owner);await persistOwnerManagerChange();$("ownerManageStatus").textContent="تم حذف "+actual.length+" صف للمالك: "+owner;}
+  catch(e){alert("تعذر حذف المالك: "+e.message)}
 }
 async function deleteSelectedOwners(){
  const owners=[...ownerBulkSelected].filter(n=>S&&S.byOwner&&S.byOwner.has(n));if(!owners.length)return;
- const rowSet=new Set();owners.forEach(n=>(S.byOwner.get(n)||[]).forEach(r=>rowSet.add(r)));const rows=[...rowSet].sort((a,b)=>a-b);
- if(!confirm("تأكيد الحذف النهائي للملاك المحددين؟\n\nعدد الملاك: "+owners.length+"\nعدد الصفوف: "+rows.length+"\n\nسيتم حذف جميع صفوف هؤلاء الملاك بكل اللوحات والبيانات، ولا يمكن التراجع من داخل التطبيق."))return;
- try{const ws=await ownerManagerWorkbook();const groups=[];let st=rows[0],pr=rows[0];for(let i=1;i<rows.length;i++){if(rows[i]===pr+1){pr=rows[i];continue}groups.push([st,pr-st+1]);st=pr=rows[i]}groups.push([st,pr-st+1]);groups.reverse().forEach(([r,n])=>ws.spliceRows(r,n));ownerBulkSelected.clear();await persistOwnerManagerChange();$("ownerManageStatus").textContent="تم حذف "+owners.length+" مالك وإزالة "+rows.length+" صف."}
+ const ws=await ownerManagerWorkbook(),rowSet=[];for(let r=S.h+1;r<=ws.rowCount;r++){if(owners.includes(ctext(ws.getRow(r).getCell(S.oc))))rowSet.push(r)}
+ if(!rowSet.length){alert("لم يتم العثور على صفوف للملاك المحددين.");return}
+ if(!confirm("تأكيد الحذف النهائي للملاك المحددين؟\n\nعدد الملاك: "+owners.length+"\nعدد الصفوف: "+rowSet.length+"\n\nسيتم حذف جميع صفوف هؤلاء الملاك بكل اللوحات والبيانات."))return;
+ try{for(let i=rowSet.length-1;i>=0;i--)ws.spliceRows(rowSet[i],1);ownerBulkSelected.clear();await persistOwnerManagerChange();$("ownerManageStatus").textContent="تم حذف "+owners.length+" مالك وإزالة "+rowSet.length+" صف."}
  catch(e){alert("تعذر حذف الملاك المحددين: "+e.message)}
 }
 $("ownerSelectAll").onchange=()=>{const q=String($("ownerSearch").value||"").trim().toLocaleLowerCase();[...S.byOwner.keys()].filter(n=>n.toLocaleLowerCase().includes(q)).forEach(n=>$("ownerSelectAll").checked?ownerBulkSelected.add(n):ownerBulkSelected.delete(n));renderOwnerManager()};

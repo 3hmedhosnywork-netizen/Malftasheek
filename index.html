@@ -38,10 +38,32 @@ button:disabled{opacity:.5}
 input.paste-type{width:100%;min-width:0;margin:0;padding:5px 7px;font-size:.82rem;border-radius:6px}
 label{display:block}
 #log{white-space:pre-wrap;font-size:.92rem}
+
+.owner-tools-head{display:flex;align-items:center;justify-content:space-between;direction:ltr;gap:10px;margin-bottom:4px}
+.owner-tools-head h2{direction:rtl;margin:0;flex:1}
+.owner-open-btn{width:auto!important;margin:0!important;padding:7px 11px!important;border-radius:9px!important;font-size:.86rem!important;display:flex;align-items:center;gap:5px;flex:none}
+.owner-open-btn span{font-size:.86rem}
+.owner-bulkbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:9px 0;direction:rtl;border-bottom:1px solid var(--bd);margin-bottom:5px}
+.owner-bulkbar label{display:flex;align-items:center;gap:5px;font-size:.88rem}
+.owner-bulkbar input{width:18px;height:18px;accent-color:var(--ac)}
+.owner-bulkbar #ownerSelectedCount{font-size:.82rem;color:var(--mut)}
+.owner-bulkbar button{width:auto!important;margin:0!important;padding:6px 10px!important;font-size:.84rem!important;border-radius:8px!important;background:#b91c1c}
+.owner-card{display:flex;align-items:center;gap:9px;border:1px solid var(--bd);border-radius:10px;padding:10px;margin:7px 0;direction:rtl}
+.owner-card input[type=checkbox]{width:19px;height:19px;accent-color:var(--ac);flex:none}
+.owner-card-main{flex:1;min-width:0}
+.owner-card-name{font-weight:700;overflow-wrap:anywhere}
+.owner-card-count{color:var(--mut);font-size:.82rem;white-space:nowrap}
+.owner-card-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.owner-card-actions button{width:auto!important;margin:0!important;padding:6px 9px!important;border-radius:8px!important;font-size:.82rem!important;display:inline-flex;align-items:center;gap:4px}
+.owner-card-actions .ownerDelete{background:#b91c1c}
+.owner-card-actions .ownerRename{background:var(--ac)}
+.owner-close-btn{background:transparent!important;color:var(--ac)!important;border:1px solid var(--ac)!important;padding:8px!important;font-size:.9rem!important}
+@media(max-width:420px){.owner-card{gap:7px;padding:8px}.owner-card-actions button{padding:5px 7px!important;font-size:.78rem!important}.owner-bulkbar{gap:7px}}
+
 </style>
 </head>
 <body>
-<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v30</span></h1>
+<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v31</span></h1>
 
 <div class="card">
 <h2>١) الشيت الأساسي المجمع (xlsx)</h2>
@@ -70,7 +92,7 @@ label{display:block}
 <div id="wallets"></div>
 <datalist id="dl"></datalist>
 
-<!-- V30: independent owner management -->
+<!-- V31: independent owner management -->
 <div class="card" id="ownerTools">
 <h2>إدارة الملاك</h2>
 <div class="mut">تعديل اسم المالك أو حذف جميع صفوفه من الشيت الأساسي. هذه الأداة مستقلة عن تحديث المحافظ.</div>
@@ -757,16 +779,17 @@ $("applyBtn").onclick=async()=>{
   }catch(err){log("خطأ أثناء إنشاء الملف: "+err.message)}
 };
 
-// V30 owner-management tools: operates only on selected owner's rows in the primary workbook.
-let ownerManageSelected="";
+// V31 owner-management tools: multi-select owner cleanup and compact UI.
+let ownerManageSelected="";const ownerBulkSelected=new Set();
+function updateOwnerBulkUI(){const count=ownerBulkSelected.size;$("ownerSelectedCount").textContent=count+" محدد";$("ownerBulkDelete").disabled=count===0;const visible=[...S.byOwner.keys()].filter(n=>n.toLocaleLowerCase().includes(String($("ownerSearch").value||"").trim().toLocaleLowerCase()));$("ownerSelectAll").checked=visible.length>0&&visible.every(n=>ownerBulkSelected.has(n));$("ownerSelectAll").indeterminate=visible.some(n=>ownerBulkSelected.has(n))&&!$("ownerSelectAll").checked}
 function renderOwnerManager(){
   const panel=$("ownerManagePanel"),list=$("ownerManageList"),query=String($("ownerSearch").value||"").trim().toLocaleLowerCase();
   if(!S||!S.byOwner){list.innerHTML='<div class="er">حمّل الشيت الأساسي أولاً.</div>';return}
-  const names=[...S.byOwner.keys()].sort((a,b)=>a.localeCompare(b,"ar"));
-  const visible=names.filter(n=>n.toLocaleLowerCase().includes(query));
-  list.innerHTML=visible.map(n=>`<div class="own" style="border:1px solid var(--bd);border-radius:9px;padding:10px;margin:7px 0"><div><b>${esc(n)}</b><span class="mut"> · ${S.byOwner.get(n).length} صف</span></div><div class="own-actions"><button type="button" class="ownerRename" data-owner="${esc(n)}" style="width:auto;margin:0;padding:8px 12px">✏️ تعديل الاسم</button><button type="button" class="ownerDelete" data-owner="${esc(n)}" style="width:auto;margin:0;padding:8px 12px;background:#b91c1c">🗑️ حذف المالك</button></div></div>`).join("")||'<div class="mut">لا توجد أسماء مطابقة.</div>';
+  const names=[...S.byOwner.keys()].sort((a,b)=>a.localeCompare(b,"ar"));const visible=names.filter(n=>n.toLocaleLowerCase().includes(query));
+  list.innerHTML=visible.map(n=>`<div class="owner-card"><input type="checkbox" class="ownerSelect" aria-label="تحديد ${esc(n)}" data-owner="${esc(n)}" ${ownerBulkSelected.has(n)?"checked":""}><div class="owner-card-main"><div class="owner-card-name">${esc(n)}</div><span class="owner-card-count">${S.byOwner.get(n).length} صف</span><div class="owner-card-actions"><button type="button" class="ownerRename" data-owner="${esc(n)}" title="تعديل الاسم">✏️ <span>تعديل</span></button><button type="button" class="ownerDelete" data-owner="${esc(n)}" title="حذف المالك">🗑️ <span>حذف</span></button></div></div></div>`).join("")||'<div class="mut">لا توجد أسماء مطابقة.</div>';
+  list.querySelectorAll(".ownerSelect").forEach(c=>c.onchange=()=>{c.checked?ownerBulkSelected.add(c.dataset.owner):ownerBulkSelected.delete(c.dataset.owner);updateOwnerBulkUI()});
   list.querySelectorAll(".ownerRename").forEach(b=>b.onclick=()=>renameOwner(b.dataset.owner));
-  list.querySelectorAll(".ownerDelete").forEach(b=>b.onclick=()=>deleteOwnerRows(b.dataset.owner));
+  list.querySelectorAll(".ownerDelete").forEach(b=>b.onclick=()=>deleteOwnerRows(b.dataset.owner));updateOwnerBulkUI();
 }
 async function ownerManagerWorkbook(){
   if(!S)throw new Error("حمّل الشيت الأساسي أولاً");
@@ -798,9 +821,19 @@ async function deleteOwnerRows(owner){
     const groups=[];let start=rows[0],prev=rows[0];
     for(let i=1;i<rows.length;i++){if(rows[i]===prev+1){prev=rows[i];continue}groups.push([start,prev-start+1]);start=prev=rows[i]}
     groups.push([start,prev-start+1]);groups.reverse().forEach(([r,n])=>ws.spliceRows(r,n));
+    ownerBulkSelected.delete(owner);
     await persistOwnerManagerChange();$("ownerManageStatus").textContent="تم حذف "+rows.length+" صف للمالك: "+owner;
   }catch(e){alert("تعذر حذف المالك: "+e.message)}
 }
+async function deleteSelectedOwners(){
+ const owners=[...ownerBulkSelected].filter(n=>S&&S.byOwner&&S.byOwner.has(n));if(!owners.length)return;
+ const rowSet=new Set();owners.forEach(n=>(S.byOwner.get(n)||[]).forEach(r=>rowSet.add(r)));const rows=[...rowSet].sort((a,b)=>a-b);
+ if(!confirm("تأكيد الحذف النهائي للملاك المحددين؟\n\nعدد الملاك: "+owners.length+"\nعدد الصفوف: "+rows.length+"\n\nسيتم حذف جميع صفوف هؤلاء الملاك بكل اللوحات والبيانات، ولا يمكن التراجع من داخل التطبيق."))return;
+ try{const ws=await ownerManagerWorkbook();const groups=[];let st=rows[0],pr=rows[0];for(let i=1;i<rows.length;i++){if(rows[i]===pr+1){pr=rows[i];continue}groups.push([st,pr-st+1]);st=pr=rows[i]}groups.push([st,pr-st+1]);groups.reverse().forEach(([r,n])=>ws.spliceRows(r,n));ownerBulkSelected.clear();await persistOwnerManagerChange();$("ownerManageStatus").textContent="تم حذف "+owners.length+" مالك وإزالة "+rows.length+" صف."}
+ catch(e){alert("تعذر حذف الملاك المحددين: "+e.message)}
+}
+$("ownerSelectAll").onchange=()=>{const q=String($("ownerSearch").value||"").trim().toLocaleLowerCase();[...S.byOwner.keys()].filter(n=>n.toLocaleLowerCase().includes(q)).forEach(n=>$("ownerSelectAll").checked?ownerBulkSelected.add(n):ownerBulkSelected.delete(n));renderOwnerManager()};
+$("ownerBulkDelete").onclick=deleteSelectedOwners;
 $("ownerManageBtn").onclick=()=>{if(!S){alert("حمّل الشيت الأساسي أولاً.");return}$("ownerManagePanel").hidden=false;renderOwnerManager()};
 $("ownerManageClose").onclick=()=>{$("ownerManagePanel").hidden=true};
 $("ownerSearch").oninput=renderOwnerManager;

@@ -41,7 +41,7 @@ label{display:block}
 </style>
 </head>
 <body>
-<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v25</span></h1>
+<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v30</span></h1>
 
 <div class="card">
 <h2>١) الشيت الأساسي المجمع (xlsx)</h2>
@@ -69,6 +69,19 @@ label{display:block}
 <button id="pasteBtn">تجهيز اللوحات</button></div>
 <div id="wallets"></div>
 <datalist id="dl"></datalist>
+
+<!-- V30: independent owner management -->
+<div class="card" id="ownerTools">
+<h2>إدارة الملاك</h2>
+<div class="mut">تعديل اسم المالك أو حذف جميع صفوفه من الشيت الأساسي. هذه الأداة مستقلة عن تحديث المحافظ.</div>
+<button id="ownerManageBtn" type="button">👥 مسح الملاك / إدارة الملاك</button>
+<div id="ownerManagePanel" hidden style="margin-top:10px">
+<input type="text" id="ownerSearch" placeholder="ابحث عن اسم المالك...">
+<div id="ownerManageList"></div>
+<div id="ownerManageStatus" class="mut"></div>
+<button id="ownerManageClose" type="button" style="background:transparent;color:var(--ac);border:1px solid var(--ac)">إغلاق إدارة الملاك</button>
+</div>
+</div>
 
 <div class="card" id="applyBox" hidden>
 <button id="applyBtn">٣) تنفيذ</button>
@@ -743,6 +756,54 @@ $("applyBtn").onclick=async()=>{
     try{await DB.set("main",S.out)}catch(e){}$("dlBtn").hidden=false;buildIndex();W=[];renderWallets();$("walf").value="";$("walInfo").textContent="";$("applyBtn").disabled=false;$("applyBox").hidden=false;log($("log").textContent+"\nالنتيجة اتعتمدت وحُفظت تلقائيًا كآخر شيت أساسي. ارفع المحفظة التالية أو نزّل الملف.");
   }catch(err){log("خطأ أثناء إنشاء الملف: "+err.message)}
 };
+
+// V30 owner-management tools: operates only on selected owner's rows in the primary workbook.
+let ownerManageSelected="";
+function renderOwnerManager(){
+  const panel=$("ownerManagePanel"),list=$("ownerManageList"),query=String($("ownerSearch").value||"").trim().toLocaleLowerCase();
+  if(!S||!S.byOwner){list.innerHTML='<div class="er">حمّل الشيت الأساسي أولاً.</div>';return}
+  const names=[...S.byOwner.keys()].sort((a,b)=>a.localeCompare(b,"ar"));
+  const visible=names.filter(n=>n.toLocaleLowerCase().includes(query));
+  list.innerHTML=visible.map(n=>`<div class="own" style="border:1px solid var(--bd);border-radius:9px;padding:10px;margin:7px 0"><div><b>${esc(n)}</b><span class="mut"> · ${S.byOwner.get(n).length} صف</span></div><div class="own-actions"><button type="button" class="ownerRename" data-owner="${esc(n)}" style="width:auto;margin:0;padding:8px 12px">✏️ تعديل الاسم</button><button type="button" class="ownerDelete" data-owner="${esc(n)}" style="width:auto;margin:0;padding:8px 12px;background:#b91c1c">🗑️ حذف المالك</button></div></div>`).join("")||'<div class="mut">لا توجد أسماء مطابقة.</div>';
+  list.querySelectorAll(".ownerRename").forEach(b=>b.onclick=()=>renameOwner(b.dataset.owner));
+  list.querySelectorAll(".ownerDelete").forEach(b=>b.onclick=()=>deleteOwnerRows(b.dataset.owner));
+}
+async function ownerManagerWorkbook(){
+  if(!S)throw new Error("حمّل الشيت الأساسي أولاً");
+  if(!S.wb){const wb=new ExcelJS.Workbook();await wb.xlsx.load(S.bytes);S.wb=wb;S.ws=wb.getWorksheet(S.sheetName)||wb.worksheets[0]}
+  return S.ws;
+}
+async function persistOwnerManagerChange(){
+  S.out=new Uint8Array(await S.wb.xlsx.writeBuffer());S.bytes=S.out;S.fileName="النسخة المعدلة من إدارة الملاك";
+  try{await DB.set("main",S.out)}catch(e){}
+  buildIndex();renderWallets();$("dlBtn").hidden=false;
+  $("mainInfo").innerHTML='<span class="ok">تم تحديث الشيت الأساسي · '+S.byOwner.size+' مالك</span>';
+  renderOwnerManager();
+}
+async function renameOwner(oldName){
+  const newName=prompt("اكتب الاسم الجديد للمالك:\n"+oldName,oldName);if(newName===null)return;
+  const cleaned=String(newName).trim();if(!cleaned){alert("اسم المالك لا يمكن أن يكون فارغًا.");return}
+  if(cleaned===oldName)return;
+  if(!confirm("تأكيد تعديل اسم المالك؟\n\nمن: "+oldName+"\nإلى: "+cleaned+"\n\nسيتم تعديل الاسم في كل صفوف هذا المالك فقط، دون تغيير اللوحات أو البيانات الأخرى."))return;
+  try{const ws=await ownerManagerWorkbook(),rows=S.byOwner.get(oldName)||[];rows.forEach(r=>{ws.getRow(r).getCell(S.oc).value=cleaned});await persistOwnerManagerChange();$("ownerManageStatus").textContent="تم تعديل الاسم في "+rows.length+" صف."}
+  catch(e){alert("تعذر تعديل الاسم: "+e.message)}
+}
+async function deleteOwnerRows(owner){
+  const rows=(S&&S.byOwner&&S.byOwner.get(owner)||[]).slice().sort((a,b)=>a-b);
+  if(!rows.length){alert("لم يتم العثور على صفوف لهذا المالك.");return}
+  if(!confirm("تأكيد الحذف النهائي؟\n\nالمالك: "+owner+"\nعدد الصفوف التي سيتم حذفها: "+rows.length+"\n\nسيتم حذف كل الصفوف الخاصة بهذا المالك (كل اللوحات والبيانات في الصفوف)، ولا يمكن التراجع من داخل التطبيق."))return;
+  try{
+    const ws=await ownerManagerWorkbook();
+    // Collapse contiguous row ranges and remove them from bottom to top so row indexes stay valid.
+    const groups=[];let start=rows[0],prev=rows[0];
+    for(let i=1;i<rows.length;i++){if(rows[i]===prev+1){prev=rows[i];continue}groups.push([start,prev-start+1]);start=prev=rows[i]}
+    groups.push([start,prev-start+1]);groups.reverse().forEach(([r,n])=>ws.spliceRows(r,n));
+    await persistOwnerManagerChange();$("ownerManageStatus").textContent="تم حذف "+rows.length+" صف للمالك: "+owner;
+  }catch(e){alert("تعذر حذف المالك: "+e.message)}
+}
+$("ownerManageBtn").onclick=()=>{if(!S){alert("حمّل الشيت الأساسي أولاً.");return}$("ownerManagePanel").hidden=false;renderOwnerManager()};
+$("ownerManageClose").onclick=()=>{$("ownerManagePanel").hidden=true};
+$("ownerSearch").oninput=renderOwnerManager;
 
 const XMIME="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 function saveFile(bytes){

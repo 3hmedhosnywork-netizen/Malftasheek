@@ -41,7 +41,7 @@ label{display:block}
 
 .owner-tools-head{display:flex;align-items:center;justify-content:space-between;direction:ltr;gap:10px;margin-bottom:4px}
 .owner-tools-head h2{direction:rtl;margin:0;flex:1}
-.owner-open-btn{width:auto!important;margin:0!important;padding:7px 11px!important;border-radius:9px!important;font-size:.86rem!important;display:flex;align-items:center;gap:5px;flex:none}
+.owner-open-btn{background:var(--ac)!important;color:#fff!important;width:auto!important;margin:0!important;padding:7px 11px!important;border-radius:9px!important;font-size:.86rem!important;display:flex;align-items:center;gap:5px;flex:none}
 .owner-open-btn span{font-size:.86rem}
 .owner-bulkbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:9px 0;direction:rtl;border-bottom:1px solid var(--bd);margin-bottom:5px}
 .owner-bulkbar label{display:flex;align-items:center;gap:5px;font-size:.88rem}
@@ -63,7 +63,7 @@ label{display:block}
 </style>
 </head>
 <body>
-<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v31</span></h1>
+<h1>دمج محافظ اللوحات <span class="mut" style="font-size:.7rem">v32</span></h1>
 
 <div class="card">
 <h2>١) الشيت الأساسي المجمع (xlsx)</h2>
@@ -92,16 +92,16 @@ label{display:block}
 <div id="wallets"></div>
 <datalist id="dl"></datalist>
 
-<!-- V31: independent owner management -->
+<!-- V32: repaired owner selection UI and verified persistent save -->
 <div class="card" id="ownerTools">
-<h2>إدارة الملاك</h2>
+<div class="owner-tools-head"><button id="ownerManageBtn" class="owner-open-btn" type="button"><span>👥</span> إدارة الملاك</button><h2>إدارة الملاك</h2></div>
 <div class="mut">تعديل اسم المالك أو حذف جميع صفوفه من الشيت الأساسي. هذه الأداة مستقلة عن تحديث المحافظ.</div>
-<button id="ownerManageBtn" type="button">👥 مسح الملاك / إدارة الملاك</button>
 <div id="ownerManagePanel" hidden style="margin-top:10px">
 <input type="text" id="ownerSearch" placeholder="ابحث عن اسم المالك...">
+<div class="owner-bulkbar"><label><input id="ownerSelectAll" type="checkbox"> تحديد الكل</label><span id="ownerSelectedCount">0 محدد</span><button id="ownerBulkDelete" type="button" disabled>حذف المحدد</button></div>
 <div id="ownerManageList"></div>
 <div id="ownerManageStatus" class="mut"></div>
-<button id="ownerManageClose" type="button" style="background:transparent;color:var(--ac);border:1px solid var(--ac)">إغلاق إدارة الملاك</button>
+<button id="ownerManageClose" class="owner-close-btn" type="button">إغلاق إدارة الملاك</button>
 </div>
 </div>
 
@@ -779,14 +779,14 @@ $("applyBtn").onclick=async()=>{
   }catch(err){log("خطأ أثناء إنشاء الملف: "+err.message)}
 };
 
-// V31 owner-management tools: multi-select owner cleanup and compact UI.
+// V32 owner-management tools: working selection controls and awaited persistence.
 let ownerManageSelected="";const ownerBulkSelected=new Set();
-function updateOwnerBulkUI(){const count=ownerBulkSelected.size;$("ownerSelectedCount").textContent=count+" محدد";$("ownerBulkDelete").disabled=count===0;const visible=[...S.byOwner.keys()].filter(n=>n.toLocaleLowerCase().includes(String($("ownerSearch").value||"").trim().toLocaleLowerCase()));$("ownerSelectAll").checked=visible.length>0&&visible.every(n=>ownerBulkSelected.has(n));$("ownerSelectAll").indeterminate=visible.some(n=>ownerBulkSelected.has(n))&&!$("ownerSelectAll").checked}
+function updateOwnerBulkUI(){if(!S||!S.byOwner)return;const count=ownerBulkSelected.size;$("ownerSelectedCount").textContent=count+" محدد";$("ownerBulkDelete").disabled=count===0;const visible=[...S.byOwner.keys()].filter(n=>n.toLocaleLowerCase().includes(String($("ownerSearch").value||"").trim().toLocaleLowerCase()));$("ownerSelectAll").checked=visible.length>0&&visible.every(n=>ownerBulkSelected.has(n));$("ownerSelectAll").indeterminate=visible.some(n=>ownerBulkSelected.has(n))&&!$("ownerSelectAll").checked}
 function renderOwnerManager(){
   const panel=$("ownerManagePanel"),list=$("ownerManageList"),query=String($("ownerSearch").value||"").trim().toLocaleLowerCase();
   if(!S||!S.byOwner){list.innerHTML='<div class="er">حمّل الشيت الأساسي أولاً.</div>';return}
   const names=[...S.byOwner.keys()].sort((a,b)=>a.localeCompare(b,"ar"));const visible=names.filter(n=>n.toLocaleLowerCase().includes(query));
-  list.innerHTML=visible.map(n=>`<div class="owner-card"><input type="checkbox" class="ownerSelect" aria-label="تحديد ${esc(n)}" data-owner="${esc(n)}" ${ownerBulkSelected.has(n)?"checked":""}><div class="owner-card-main"><div class="owner-card-name">${esc(n)}</div><span class="owner-card-count">${S.byOwner.get(n).length} صف</span><div class="owner-card-actions"><button type="button" class="ownerRename" data-owner="${esc(n)}" title="تعديل الاسم">✏️ <span>تعديل</span></button><button type="button" class="ownerDelete" data-owner="${esc(n)}" title="حذف المالك">🗑️ <span>حذف</span></button></div></div></div>`).join("")||'<div class="mut">لا توجد أسماء مطابقة.</div>';
+  list.innerHTML=visible.map(n=>`<div class="owner-card"><input type="checkbox" class="ownerSelect" aria-label="تحديد ${esc(n)}" data-owner="${esc(n)}" ${ownerBulkSelected.has(n)?"checked":""}><div class="owner-card-main"><div class="owner-card-name">${esc(n)}</div><span class="owner-card-count">${S.byOwner.get(n).length} صف</span><div class="owner-card-actions"><button type="button" class="ownerRename" data-owner="${esc(n)}" title="تعديل الاسم"><span>تعديل الاسم</span></button><button type="button" class="ownerDelete" data-owner="${esc(n)}" title="حذف المالك"><span>حذف</span></button></div></div></div>`).join("")||'<div class="mut">لا توجد أسماء مطابقة.</div>';
   list.querySelectorAll(".ownerSelect").forEach(c=>c.onchange=()=>{c.checked?ownerBulkSelected.add(c.dataset.owner):ownerBulkSelected.delete(c.dataset.owner);updateOwnerBulkUI()});
   list.querySelectorAll(".ownerRename").forEach(b=>b.onclick=()=>renameOwner(b.dataset.owner));
   list.querySelectorAll(".ownerDelete").forEach(b=>b.onclick=()=>deleteOwnerRows(b.dataset.owner));updateOwnerBulkUI();
@@ -798,9 +798,13 @@ async function ownerManagerWorkbook(){
 }
 async function persistOwnerManagerChange(){
   S.out=new Uint8Array(await S.wb.xlsx.writeBuffer());S.bytes=S.out;S.fileName="النسخة المعدلة من إدارة الملاك";
-  try{await DB.set("main",S.out)}catch(e){}
-  buildIndex();renderWallets();$("dlBtn").hidden=false;
-  $("mainInfo").innerHTML='<span class="ok">تم تحديث الشيت الأساسي · '+S.byOwner.size+' مالك</span>';
+  await DB.set("main",S.out);
+  buildIndex();
+  // Wait for the owner index write as well; otherwise a refresh can restore stale owner names/counts.
+  await DB.set("index",{pc:S.pc,oc:S.oc,h:S.h,heads:S.heads,sheetName:S.sheetName,ar:S.ar,dump:S.dump,name:S.fileName,at:Date.now(),v:5});
+  const check=await DB.get("main");if(!check||check.byteLength!==S.out.byteLength)throw new Error("تعذر التحقق من حفظ الشيت في التخزين المحلي");
+  renderWallets();$("dlBtn").hidden=false;
+  $("mainInfo").innerHTML='<span class="ok">تم حفظ التحديث محليًا والتحقق منه · '+S.byOwner.size+' مالك</span>';
   renderOwnerManager();
 }
 async function renameOwner(oldName){
